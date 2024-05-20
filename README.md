@@ -1,2 +1,2 @@
-# distributed-arithmetic-expression-calculator
-First Yandex.Lyceum Golang Project 
+# Распределённый вычислитель арифметических выражений
+Первый проект Яндекс.Лицей по языку Go.
