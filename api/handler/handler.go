@@ -8,7 +8,7 @@ Calculation is a type of structure that represents a single calculation using Re
 package handler
 
 import (
-	calculate "distributed-calculator/internal/logic"
+	"distributed-calculator/internal/logic"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -31,14 +31,18 @@ type Calculation struct {
 	Result     float64 `json:"result"`
 }
 
-var Tasks map[int]Task = map[int]Task{
-	1: Task{
-		Id:         1,
-		Status:     "In Process",
-		Expression: "2 + 2 - 4",
-		Result:     0,
-	},
-}
+// Uncomment lines below for testing purposes
+
+// var Tasks map[int]Task = map[int]Task{
+// 	1: Task{
+// 		Id:         1,
+// 		Status:     "In Process",
+// 		Expression: "2 + 2 - 4",
+// 		Result:     0,
+// 	},
+// }
+
+var Tasks map[int]Task;
 
 var Calculations chan Calculation
 
