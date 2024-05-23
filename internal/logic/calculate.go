@@ -1,10 +1,16 @@
-package expressions
+package calculate
 
 import (
     "fmt"
     "unicode"
 	"strings"
+    "strconv"
 )
+
+func IsFloat(s string) bool {
+    _, err := strconv.ParseFloat(s, 64)
+    return err == nil
+}
 
 func isOperator(char rune) bool {
     switch char {
@@ -121,3 +127,37 @@ func infixToRPN(expression string) (string, error) {
     return strings.Join(output, " "), nil
 }
 
+// This is my function from LeetCode :)
+func evalRPN(tokens []string) int {
+	stack := []int32{}
+	for _, val := range tokens {
+		n, err := strconv.Atoi(val)
+		if err != nil {
+			k := len(stack)
+			switch val {
+			case "+":
+				new := stack[k-2] + stack[k-1]
+				stack = stack[:k-2]
+				stack = append(stack, new)
+			case "-":
+				new := stack[k-2] - stack[k-1]
+				stack = stack[:k-2]
+				stack = append(stack, new)
+
+			case "*":
+				new := stack[k-2] * stack[k-1]
+				stack = stack[:k-2]
+				stack = append(stack, new)
+			case "/":
+				new := stack[k-2] / stack[k-1]
+				stack = stack[:k-2]
+				stack = append(stack, new)
+			}
+		} else {
+			stack = append(stack, int32(n))
+		}
+
+	}
+
+	return int(stack[0])
+}
