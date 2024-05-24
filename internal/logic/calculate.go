@@ -1,11 +1,12 @@
 package calculate
 
 import (
-    "fmt"
-    "unicode"
+	"distributed-calculator/internal/service"
+	"errors"
+	"fmt"
+	"strconv"
 	"strings"
-    "strconv"
-    "distributed-calculator/internal/service"
+	"unicode"
 )
 
 func IsFloat(s string) bool {
@@ -21,7 +22,7 @@ func isOperator(char rune) bool {
     return false
 }
 
-// Validates an infix expression for correct syntax
+// validates an infix expression for correct syntax
 func ValidateInfixExpression(expr string) error {
     var balance int
     var lastChar rune
@@ -50,7 +51,7 @@ func ValidateInfixExpression(expr string) error {
                 return fmt.Errorf("operator %c at position %d is misplaced", char, i)
             }
         case unicode.IsSpace(char):
-            // Allow spaces, do nothing
+            // allow spaces, do nothing
         default:
             return fmt.Errorf("invalid character %c at position %d", char, i)
         }
@@ -164,6 +165,36 @@ func EvalRPN(tokens []string) int {
 }
 
 
-func RPNtoSeparateCalculations(calc string, calcChan chan service.Calculation) {
+// this func evaluates the given RPN expression received from the expression channel
+// and sends the result to the result channel.
+func RPNtoSeparateCalculations(task service.Task, resultCh chan<- service.Calculation) {
+	tokens := strings.Split(task.Expression, " ")
+	stack := []string{}
 
+	for _, token := range tokens {
+		if isOperator(rune(token[0])) {
+			// pop the last two operands from the stack
+			if len(stack) < 2 {
+				continue 
+                // not enough operands for this operator, skip
+			}
+			operand2 := stack[len(stack)-1]
+			operand1 := stack[len(stack)-2]
+			stack = stack[:len(stack)-2]
+
+			// send the parallelizable part of the task to the channel
+            newCalc := service.Calculation{
+                Task_id: task.Id,
+                RPN_string: operand1 + " " + operand2 + " " + token,
+                Status: "In Process",
+                Result: 0,
+            }
+			resultCh <- newCalc
+		} else {
+			// push operands onto the stack
+			stack = append(stack, token)
+		}
+	}
+
+	close(resultCh)
 }
