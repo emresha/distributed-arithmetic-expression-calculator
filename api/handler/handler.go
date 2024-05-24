@@ -72,7 +72,7 @@ func AddCalculation(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		calculate.RPNtoSeparateCalculations(newRPN, Calculations)
+		calculate.RPNtoSeparateCalculations(newRPN, NewTask.Id, Calculations)
 		
 		w.WriteHeader(http.StatusAccepted)
 		fmt.Fprintf(w, "{}")

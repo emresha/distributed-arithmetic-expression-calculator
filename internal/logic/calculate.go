@@ -166,8 +166,8 @@ func EvalRPN(tokens []string) int {
 
 // this func evaluates the given RPN expression received from the expression channel
 // and sends the result to the result channel.
-func RPNtoSeparateCalculations(task service.Task, resultCh chan<- service.Calculation) {
-	tokens := strings.Split(task.Expression, " ")
+func RPNtoSeparateCalculations(expression string, taskId int, resultCh chan<- service.Calculation) {
+	tokens := strings.Split(expression, " ")
 	stack := []string{}
 
 	for _, token := range tokens {
@@ -183,7 +183,7 @@ func RPNtoSeparateCalculations(task service.Task, resultCh chan<- service.Calcul
 
 			// send the parallelizable part of the task to the channel
             newCalc := service.Calculation{
-                Task_id: task.Id,
+                Task_id: taskId,
                 RPN_string: operand1 + " " + operand2 + " " + token,
                 Status: "In Process",
                 Result: 0,
