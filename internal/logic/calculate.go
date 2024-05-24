@@ -2,7 +2,6 @@ package calculate
 
 import (
 	"distributed-calculator/internal/service"
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
