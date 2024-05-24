@@ -5,6 +5,7 @@ import (
     "unicode"
 	"strings"
     "strconv"
+    "distributed-calculator/internal/service"
 )
 
 func IsFloat(s string) bool {
@@ -86,7 +87,7 @@ func isLeftAssociative(op rune) bool {
     return false
 }
 
-func infixToRPN(expression string) (string, error) {
+func InfixToRPN(expression string) (string, error) {
     var output []string
     var operators []rune
 
@@ -128,7 +129,7 @@ func infixToRPN(expression string) (string, error) {
 }
 
 // This is my function from LeetCode :)
-func evalRPN(tokens []string) int {
+func EvalRPN(tokens []string) int {
 	stack := []int32{}
 	for _, val := range tokens {
 		n, err := strconv.Atoi(val)
@@ -160,4 +161,9 @@ func evalRPN(tokens []string) int {
 	}
 
 	return int(stack[0])
+}
+
+
+func RPNtoSeparateCalculations(calc string, calcChan chan service.Calculation) {
+
 }

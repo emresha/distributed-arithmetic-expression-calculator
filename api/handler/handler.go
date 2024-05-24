@@ -9,6 +9,7 @@ package handler
 
 import (
 	"distributed-calculator/internal/logic"
+	"distributed-calculator/internal/service"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -17,19 +18,6 @@ import (
 	"strings"
 )
 
-type Task struct {
-	Id         int     `json:"id"`
-	Status     string  `json:"status"`
-	Expression string  `json:"expression"`
-	Result     float64 `json:"result"`
-}
-
-type Calculation struct {
-	Task_id    int     `json:"task_id"`
-	RPN_string string  `json:"RPN_string"`
-	Status     string  `json:"status"`
-	Result     float64 `json:"result"`
-}
 
 // Uncomment lines below for testing purposes
 
@@ -42,12 +30,12 @@ type Calculation struct {
 // 	},
 // }
 
-var Tasks map[int]Task;
+var Tasks map[int]service.Task;
 
-var Calculations chan Calculation
+var Calculations chan service.Calculation
 
 func AddCalculation(w http.ResponseWriter, r *http.Request) {
-	NewTask := Task{}
+	NewTask := service.Task{}
 	if r.Method == http.MethodPost && r.Header["Content-Type"][0] == "application/json" {
 		body, err := io.ReadAll(r.Body)
 		// handle read error
@@ -76,6 +64,16 @@ func AddCalculation(w http.ResponseWriter, r *http.Request) {
 		}
 		// keeping all tasks in RAM for now.
 		Tasks[NewTask.Id] = NewTask
+
+		newRPN, err := calculate.InfixToRPN(NewTask.Expression)
+
+		if err != nil {
+			http.Error(w, "Bad Request", http.StatusBadRequest)
+			return
+		}
+
+		calculate.RPNtoSeparateCalculations(newRPN, Calculations)
+		
 		w.WriteHeader(http.StatusAccepted)
 		fmt.Fprintf(w, "{}")
 
@@ -103,7 +101,7 @@ func HandleCalculations(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else if r.Method == http.MethodPost && r.Header["Content-Type"][0] == "application/json" {
-		FinishedCalculation := Calculation{}
+		FinishedCalculation := service.Calculation{}
 		body, err := io.ReadAll(r.Body)
 		// handle read error.
 		if err != nil {
@@ -153,7 +151,7 @@ func HandleAllExpressions(w http.ResponseWriter, r *http.Request) {
 	// check if ID is present and if no ID, show all expressions
 	if id == "expressions" {
 		if r.Method == http.MethodGet {
-			all_expressions := []Task{}
+			all_expressions := []service.Task{}
 			for _, value := range Tasks {
 				all_expressions = append(all_expressions, value)
 			}
