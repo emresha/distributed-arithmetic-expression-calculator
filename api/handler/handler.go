@@ -18,19 +18,7 @@ import (
 	"strings"
 )
 
-
-// Uncomment lines below for testing purposes
-
-// var Tasks map[int]Task = map[int]Task{
-// 	1: Task{
-// 		Id:         1,
-// 		Status:     "In Process",
-// 		Expression: "2 + 2 - 4",
-// 		Result:     0,
-// 	},
-// }
-
-var Tasks map[int]service.Task;
+var Tasks map[int]service.Task
 
 var Calculations chan service.Calculation
 
