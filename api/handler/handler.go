@@ -13,47 +13,49 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
 )
 
-var Tasks map[int]service.Task
+var Tasks = make(map[int]service.Task)
 
-var Calculations chan service.Calculation
+var Calculations = make(chan service.Calculation)
 
 func AddCalculation(w http.ResponseWriter, r *http.Request) {
 	NewTask := service.Task{}
 	if r.Method == http.MethodPost && r.Header["Content-Type"][0] == "application/json" {
 		body, err := io.ReadAll(r.Body)
-		// handle read error
+		// Handle read error
 		if err != nil {
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
 
-		// handle json error
+		// Handle json error
 		if err = json.Unmarshal(body, &NewTask); err != nil {
 			fmt.Println(err)
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
 
-		// if expression is incorrect, then throw error
+		// If expression is incorrect, then throw error
 		if err = calculate.ValidateInfixExpression(NewTask.Expression); err != nil {
 			http.Error(w, "Bad Request", http.StatusUnprocessableEntity)
 			return
 		}
 
-		// if task already exists, then throw an error because every task must have a unique id!!
+		// If task already exists, then throw an error because every task must have a unique id!!
 		if _, ok := Tasks[NewTask.Id]; ok {
 			http.Error(w, "Bad Request", http.StatusBadRequest)
 			return
 		}
-		// keeping all tasks in RAM for now.
+		// Keeping all tasks in RAM for now.
 		Tasks[NewTask.Id] = NewTask
 
 		newRPN, err := calculate.InfixToRPN(NewTask.Expression)
+		log.Println(newRPN)
 
 		if err != nil {
 			http.Error(w, "Bad Request", http.StatusBadRequest)
@@ -74,7 +76,7 @@ func AddCalculation(w http.ResponseWriter, r *http.Request) {
 func HandleCalculations(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		select {
-		case calculation := <-Calculations: // if there are any calculations available.
+		case calculation := <-Calculations: // If there are any calculations available
 			task_json, err := json.Marshal(calculation)
 			if err != nil {
 				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
@@ -91,37 +93,43 @@ func HandleCalculations(w http.ResponseWriter, r *http.Request) {
 	} else if r.Method == http.MethodPost && r.Header["Content-Type"][0] == "application/json" {
 		FinishedCalculation := service.Calculation{}
 		body, err := io.ReadAll(r.Body)
-		// handle read error.
+		// Handle read error.
 		if err != nil {
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
-		// handle json error.
+		// Handle json error.
 		if err = json.Unmarshal(body, &FinishedCalculation); err != nil {
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
 
-		// just in case some strange magic happened??
+		// Just in case some strange magic happened??
 		if FinishedCalculation.Status != "Finished" {
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
 
-		// change linked task's expression accordingly
-		// and check if task successfully calculated.
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, "{}")
+		
+		// Change linked task's expression accordingly
+		// And check if task successfully calculated.
+		log.Printf("GOT CALCULATION %d RESULT: %d", FinishedCalculation.Task_id, FinishedCalculation.Result)
 		LinkedTask := Tasks[FinishedCalculation.Task_id]
-		LinkedTask.Expression = strings.ReplaceAll(LinkedTask.Expression, FinishedCalculation.RPN_string, fmt.Sprintf("%.6f", FinishedCalculation.Result))
+		LinkedTask.Expression = strings.ReplaceAll(LinkedTask.Expression, FinishedCalculation.RPN_string, fmt.Sprintf("%d", FinishedCalculation.Result))
 		fmt.Println(LinkedTask.Expression)
 
-		// if calculation finished, we change the task status.
+		// If calculation finished, we change the task status.
 		if calculate.IsFloat(LinkedTask.Expression) {
 			LinkedTask.Status = "Finished"
 			LinkedTask.Result = FinishedCalculation.Result
 			Tasks[FinishedCalculation.Task_id] = LinkedTask
+			log.Printf("FINISHED CALCULATING RESULT IS %d\n", LinkedTask.Result)
+		} else {
+			calculate.RPNtoSeparateCalculations(FinishedCalculation.RPN_string, LinkedTask.Id, Calculations)
 		}
 
-		fmt.Fprintf(w, "{}")
 
 	} else {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
@@ -133,10 +141,10 @@ func HandleCalculations(w http.ResponseWriter, r *http.Request) {
 func HandleAllExpressions(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.Path, "/expressions/")
 
-	// split the path to get the ID
+	// Split the path to get the ID; TODO: use new Go 1.22.2 router instead of this terrible code.
 	parts := strings.Split(path, "/")
 	id := parts[len(parts)-1]
-	// check if ID is present and if no ID, show all expressions
+	// Check if ID is present and if no ID, show all expressions
 	if id == "expressions" {
 		if r.Method == http.MethodGet {
 			all_expressions := []service.Task{}
