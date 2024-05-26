@@ -2,7 +2,7 @@
 Package handler is made for handling different endpoints.
 It defines 2 structs: Task and Calculation.
 Task is a type of structure that defines a task given by user, which consists of different Calculations that might be done concurrently.
-Calculation is a type of structure that represents a single calculation using Reverse Polisn Notation.
+Calculation is a type of structure that represents a single calculation using Reverse Polish Notation.
 */
 
 package handler
@@ -42,6 +42,7 @@ func AddCalculation(w http.ResponseWriter, r *http.Request) {
 
 		// If expression is incorrect, then throw error
 		if err = calculate.ValidateInfixExpression(NewTask.Expression); err != nil {
+			log.Printf("%v\n", err)
 			http.Error(w, "Bad Request", http.StatusUnprocessableEntity)
 			return
 		}
@@ -52,6 +53,8 @@ func AddCalculation(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// Keeping all tasks in RAM for now.
+		NewTask.Status = "In Process"
+		NewTask.Original_Expression = NewTask.Expression
 		Tasks[NewTask.Id] = NewTask
 
 		newRPN, err := calculate.InfixToRPN(NewTask.Expression)
@@ -62,10 +65,11 @@ func AddCalculation(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		calculate.RPNtoSeparateCalculations(newRPN, NewTask.Id, Calculations)
-		
 		w.WriteHeader(http.StatusAccepted)
 		fmt.Fprintf(w, "{}")
+
+		go calculate.RPNtoSeparateCalculations(newRPN, NewTask.Id, Calculations)
+
 
 	} else {
 		http.Error(w, "Bad Request", http.StatusUnprocessableEntity)
@@ -115,19 +119,30 @@ func HandleCalculations(w http.ResponseWriter, r *http.Request) {
 		
 		// Change linked task's expression accordingly
 		// And check if task successfully calculated.
-		log.Printf("GOT CALCULATION %d RESULT: %d", FinishedCalculation.Task_id, FinishedCalculation.Result)
 		LinkedTask := Tasks[FinishedCalculation.Task_id]
-		LinkedTask.Expression = strings.ReplaceAll(LinkedTask.Expression, FinishedCalculation.RPN_string, fmt.Sprintf("%d", FinishedCalculation.Result))
-		fmt.Println(LinkedTask.Expression)
+		if LinkedTask.Status == "Finished" {
+			return
+		}
+		log.Printf("Finished calculation: %s, Result: %d\n", FinishedCalculation.RPN_string, FinishedCalculation.Result)
+		log.Printf("Linked Task Expression infix: %s\n", LinkedTask.Expression)
+		LinkedExpressionRPN, _ := calculate.InfixToRPN(LinkedTask.Expression)
+		log.Printf("Linked Task Expression RPN: %s\n", LinkedExpressionRPN)
+		LinkedExpressionRPN = strings.ReplaceAll(LinkedExpressionRPN, FinishedCalculation.RPN_string, fmt.Sprintf("%d", FinishedCalculation.Result))
+		log.Printf("Linked Task Expression New RPN: %s\n", LinkedExpressionRPN)
+		LinkedExpressionInfix, _ := calculate.RPNtoInfix(LinkedExpressionRPN)
+		log.Printf("Linked Task Expression New Infix: %s\n", LinkedExpressionInfix)
+		LinkedTask.Expression = LinkedExpressionInfix
+		Tasks[FinishedCalculation.Task_id] = LinkedTask
 
-		// If calculation finished, we change the task status.
+		// If calculation finished, change the task status.
 		if calculate.IsFloat(LinkedTask.Expression) {
+			res, _ := strconv.Atoi(LinkedTask.Expression)
 			LinkedTask.Status = "Finished"
-			LinkedTask.Result = FinishedCalculation.Result
+			LinkedTask.Result = res
 			Tasks[FinishedCalculation.Task_id] = LinkedTask
 			log.Printf("FINISHED CALCULATING RESULT IS %d\n", LinkedTask.Result)
 		} else {
-			calculate.RPNtoSeparateCalculations(FinishedCalculation.RPN_string, LinkedTask.Id, Calculations)
+			go calculate.RPNtoSeparateCalculations(LinkedExpressionRPN, LinkedTask.Id, Calculations)
 		}
 
 

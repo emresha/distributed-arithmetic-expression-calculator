@@ -1,10 +1,11 @@
 package service
 
 type Task struct {
-	Id         int    `json:"id"`
-	Status     string `json:"status"`
-	Expression string `json:"expression"`
-	Result     int    `json:"result"`
+	Id                  int    `json:"id"`
+	Status              string `json:"status"`
+	Original_Expression string `json:"original_expression"`
+	Expression          string `json:"expression"`
+	Result              int    `json:"result"`
 }
 
 type Calculation struct {

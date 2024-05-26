@@ -24,52 +24,87 @@ func isOperator(char rune) bool {
 }
 
 // validates an infix expression for correct syntax
-func ValidateInfixExpression(expr string) error {
-    var balance int
-    var lastChar rune
+func tokenize(expr string) ([]string, error) {
+	var tokens []string
+	var number []rune
 
-    for i, char := range expr {
-        switch {
-        case unicode.IsDigit(char):
-            if i > 0 && (unicode.IsDigit(lastChar) || lastChar == ')') {
-                return fmt.Errorf("missing operator before %c at position %d", char, i)
-            }
-        case char == '(':
-            if i > 0 && (unicode.IsDigit(lastChar) || lastChar == ')') {
-                return fmt.Errorf("missing operator before '(' at position %d", i)
-            }
-            balance++
-        case char == ')':
-            if balance == 0 {
-                return fmt.Errorf("unmatched closing parenthesis at position %d", i)
-            }
-            if i > 0 && (lastChar == '(' || isOperator(lastChar)) {
-                return fmt.Errorf("missing operand before ')' at position %d", i)
-            }
-            balance--
-        case isOperator(char):
-            if i == 0 || isOperator(lastChar) || lastChar == '(' {
-                return fmt.Errorf("operator %c at position %d is misplaced", char, i)
-            }
-        case unicode.IsSpace(char):
-            // allow spaces, do nothing
-        default:
-            return fmt.Errorf("invalid character %c at position %d", char, i)
-        }
-        lastChar = char
-    }
+	for i, char := range expr {
+		switch {
+		case unicode.IsDigit(char) || char == '.':
+			number = append(number, char)
+		case isOperator(char) || char == '(' || char == ')':
+			if len(number) > 0 {
+				tokens = append(tokens, string(number))
+				number = []rune{}
+			}
+			tokens = append(tokens, string(char))
+		case unicode.IsSpace(char):
+			if len(number) > 0 {
+				tokens = append(tokens, string(number))
+				number = []rune{}
+			}
+		default:
+			return nil, fmt.Errorf("invalid character %c at position %d", char, i)
+		}
+	}
 
-    if balance != 0 {
-        return fmt.Errorf("unmatched opening parenthesis")
-    }
+	if len(number) > 0 {
+		tokens = append(tokens, string(number))
+	}
 
-    if isOperator(lastChar) {
-        return fmt.Errorf("expression ends with an operator")
-    }
-
-    return nil
+	return tokens, nil
 }
 
+func ValidateInfixExpression(expr string) error {
+	tokens, err := tokenize(expr)
+	if err != nil {
+		return err
+	}
+
+	var balance int
+	var lastToken string
+
+	for i, token := range tokens {
+		switch {
+		case isOperator(rune(token[0])):
+			if i == 0 || isOperator(rune(lastToken[0])) || lastToken == "(" {
+				return fmt.Errorf("operator %s at position %d is misplaced", token, i)
+			}
+		case token == "(":
+			if i > 0 && (unicode.IsDigit(rune(lastToken[0])) || lastToken == ")" || isOperator(rune(lastToken[0]))) {
+				return fmt.Errorf("missing operator before '(' at position %d", i)
+			}
+			balance++
+		case token == ")":
+			if balance == 0 {
+				return fmt.Errorf("unmatched closing parenthesis at position %d", i)
+			}
+			if lastToken == "(" || isOperator(rune(lastToken[0])) {
+				return fmt.Errorf("missing operand before ')' at position %d", i)
+			}
+			balance--
+		default:
+			// Token should be a number
+			if _, err := strconv.ParseFloat(token, 64); err != nil {
+				return fmt.Errorf("invalid token %s at position %d", token, i)
+			}
+			if i > 0 && (unicode.IsDigit(rune(lastToken[0])) || lastToken == ")") {
+				return fmt.Errorf("missing operator before %s at position %d", token, i)
+			}
+		}
+		lastToken = token
+	}
+
+	if balance != 0 {
+		return fmt.Errorf("unmatched opening parenthesis")
+	}
+
+	if isOperator(rune(lastToken[0])) {
+		return fmt.Errorf("expression ends with an operator")
+	}
+
+	return nil
+}
 
 func precedence(op rune) int {
     switch op {
@@ -227,6 +262,48 @@ func RPNtoSeparateCalculations(expression string, taskId int, resultCh chan<- se
 		}
 	}
 }
+
+func RPNtoInfix(expression string) (string, error) {
+	tokens := strings.Split(expression, " ")
+	stack := []string{}
+
+	for _, token := range tokens {
+		if len(token) == 0 {
+			continue
+		}
+		if isOperator(rune(token[0])) && len(token) == 1 {
+			// pop the last two operands from the stack
+			if len(stack) < 2 {
+				return "", fmt.Errorf("invalid RPN expression: not enough operands for operator %s", token)
+			}
+			operand2 := stack[len(stack)-1]
+			operand1 := stack[len(stack)-2]
+			stack = stack[:len(stack)-2]
+
+			// create a new infix expression and push it back onto the stack
+			newExpr := "(" + operand1 + " " + token + " " + operand2 + ")"
+			stack = append(stack, newExpr)
+		} else if isNumeric(token) || len(token) > 1 {
+			// push operands onto the stack
+			stack = append(stack, token)
+		} else {
+			return "", fmt.Errorf("invalid token in RPN expression: %s", token)
+		}
+	}
+
+	// Handle single operand case
+	if len(stack) == 1 {
+		return stack[0], nil
+	}
+
+	// At the end, the stack should contain exactly one element, the final infix expression
+	if len(stack) != 1 {
+		return "", fmt.Errorf("invalid RPN expression: stack has %d elements after processing", len(stack))
+	}
+
+	return stack[0], nil
+}
+
 func isNumeric(token string) bool {
 	for _, char := range token {
 		if !unicode.IsDigit(char) && char != '.' {
