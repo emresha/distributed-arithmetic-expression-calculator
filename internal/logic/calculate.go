@@ -1,5 +1,11 @@
 package calculate
 
+/*
+This package is basically all the calculations logic
+And I am not going to comment any of it since
+It is overly complicated.
+*/
+
 import (
 	"distributed-calculator/internal/service"
 	"errors"

@@ -21,7 +21,9 @@ import (
 
 var Tasks = make(map[int]service.Task)
 
+// This slice has calculations waiting to be sent to The Agent.
 var Calculations = []service.Calculation{}
+// This slice has calculations that are currently being calculated by The Agent.
 var BeingCalculated = []service.Calculation{}
 
 func AddTask(w http.ResponseWriter, r *http.Request) {
@@ -38,6 +40,12 @@ func AddTask(w http.ResponseWriter, r *http.Request) {
 		if err = json.Unmarshal(body, &NewTask); err != nil {
 			fmt.Println(err)
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
+			return
+		}
+
+		// If expression is just a number, then it is not an expression.
+		if calculate.IsFloat(NewTask.Expression) {
+			http.Error(w, "Bad Request", http.StatusUnprocessableEntity)
 			return
 		}
 
@@ -79,22 +87,9 @@ func AddTask(w http.ResponseWriter, r *http.Request) {
 }
 
 func HandleCalculations(w http.ResponseWriter, r *http.Request) {
+	// If request method is get, then The Agent is asking for a Calculation to calculate.
 	if r.Method == http.MethodGet {
-		// select {
-		// case calculation := Calculations[0]: // If there are any calculations available
-		// 	task_json, err := json.Marshal(calculation)
-		// 	if err != nil {
-		// 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		// 		return
-		// 	}
-		// 	w.WriteHeader(http.StatusOK)
-		// 	w.Header().Add("Content-Type", "application/json")
-		// 	fmt.Fprint(w, string(task_json))
-		// 	return
-		// default:
-		// 	http.Error(w, "Not Found", http.StatusNotFound)
-		// 	return
-		// }
+		// If there are calculations waiting to be calculated, hand them out to The Agent. 
 		if len(Calculations) > 0 {
 			calculation := Calculations[0]
 
@@ -103,8 +98,11 @@ func HandleCalculations(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 				return
 			}
+			// Delete the handed Calculation from waiting list...
 			Calculations = Calculations[1:]
+			// ... and add it to the BeingCalculated slice!
 			BeingCalculated = append(BeingCalculated, calculation)
+
 			w.WriteHeader(http.StatusOK)
 			w.Header().Add("Content-Type", "application/json")
 			fmt.Fprint(w, string(task_json))
@@ -114,6 +112,8 @@ func HandleCalculations(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else if r.Method == http.MethodPost && r.Header["Content-Type"][0] == "application/json" {
+		// ^^^^^ If the request method is POST, then The Agent has calculated a Calculation
+		// and is sending it back.
 		FinishedCalculation := service.Calculation{}
 		body, err := io.ReadAll(r.Body)
 		// Handle read error.
@@ -143,6 +143,8 @@ func HandleCalculations(w http.ResponseWriter, r *http.Request) {
 		if LinkedTask.Status == "Finished" {
 			return
 		}
+
+		// This is a lot of log messages...
 		log.Printf("Finished calculation: %s, Result: %d\n", FinishedCalculation.RPN_string, FinishedCalculation.Result)
 		log.Printf("Linked Task Expression infix: %s\n", LinkedTask.Expression)
 		LinkedExpressionRPN, _ := calculate.InfixToRPN(LinkedTask.Expression)
@@ -174,13 +176,10 @@ func HandleCalculations(w http.ResponseWriter, r *http.Request) {
 }
 
 func HandleAllExpressions(w http.ResponseWriter, r *http.Request) {
-	path := strings.TrimPrefix(r.URL.Path, "/expressions/")
-
-	// Split the path to get the ID; TODO: use new Go 1.22.2 router instead of this terrible code.
-	parts := strings.Split(path, "/")
-	id := parts[len(parts)-1]
+	id := r.PathValue("id")
 	// Check if ID is present and if no ID, show all expressions
-	if id == "expressions" {
+	if id == "" {
+		// The code below shows all expressions.
 		if r.Method == http.MethodGet {
 			all_expressions := []service.Task{}
 			for _, value := range Tasks {
@@ -201,7 +200,7 @@ func HandleAllExpressions(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else if calculate.IsFloat(id) {
-
+		// If ID is not empty and it is a number, then try to get the Task with the required ID.
 		searchedTaskId, err := strconv.Atoi(id)
 		if err != nil {
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
@@ -209,6 +208,7 @@ func HandleAllExpressions(w http.ResponseWriter, r *http.Request) {
 		}
 	
 		searchedTask, ok := Tasks[searchedTaskId]
+		// If not found, then send 404.
 		if !ok {
 			http.Error(w, "Not Found", http.StatusNotFound)
 			return
