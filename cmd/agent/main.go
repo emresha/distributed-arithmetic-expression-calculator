@@ -171,7 +171,7 @@ func main() {
 
 	// Infinite loop that sends requests to the Orchestrator.
 	for {
-		time.Sleep(5 * time.Second)
+		time.Sleep(1 * time.Second)
 		req, err := http.NewRequest("GET", "http://localhost:8080/internal/task", nil)
 		if err != nil {
 			log.Printf("GET Request error: %v\n", err)

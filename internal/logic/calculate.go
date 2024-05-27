@@ -8,7 +8,21 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+	"sync"
 )
+
+var mu sync.Mutex
+
+func isCalculationInSlice(calc service.Calculation, calcSlice []service.Calculation) bool {
+
+	for i := 0; i < len(calcSlice); i++ {
+		if calcSlice[i].Task_id == calc.Task_id && calcSlice[i].RPN_string == calc.RPN_string {
+			return true
+		}
+	}
+
+	return false
+}
 
 func IsFloat(s string) bool {
     _, err := strconv.ParseFloat(s, 64)
@@ -225,8 +239,10 @@ func EvalRPN(tokens []string) (int, error) {
 
 
 // this func evaluates the given RPN expression received from the expression channel
-// and sends the result to the result channel.
-func RPNtoSeparateCalculations(expression string, taskId int, resultCh chan<- service.Calculation) {
+// and sends the result to the result slice.
+func RPNtoSeparateCalculations(expression string, taskId int, resultCh *[]service.Calculation, beingCalculated []service.Calculation) {
+	mu.Lock()
+	defer mu.Unlock()
 	tokens := strings.Split(expression, " ")
 	stack := []string{}
 
@@ -252,7 +268,10 @@ func RPNtoSeparateCalculations(expression string, taskId int, resultCh chan<- se
 				Result:     0,
 			}
 			log.Printf("NEW CALC: %s\n", newCalc.RPN_string)
-			resultCh <- newCalc
+
+			if !isCalculationInSlice(newCalc, beingCalculated){
+				*resultCh = append(*resultCh, newCalc)
+			}
 
 		} else if isNumeric(token) {
 			// Push operands onto the stack

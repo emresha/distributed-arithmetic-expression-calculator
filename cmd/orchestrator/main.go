@@ -8,7 +8,7 @@ import (
 
 func main() {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v1/calculate", handler.AddCalculation)
+	mux.HandleFunc("/api/v1/calculate", handler.AddTask)
 	mux.HandleFunc("/api/v1/expressions", handler.HandleAllExpressions)
 	mux.HandleFunc("/api/v1/expressions/", handler.HandleAllExpressions)
 	mux.HandleFunc("/internal/task", handler.HandleCalculations)

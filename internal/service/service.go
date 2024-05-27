@@ -14,3 +14,12 @@ type Calculation struct {
 	Status     string `json:"status"`
 	Result     int    `json:"result"`
 }
+
+
+func DeleteCalculationFromSlice(calc Calculation, calcSlice *[]Calculation) {
+	for i := 0; i < len(*calcSlice); i++ {
+		if calc.Task_id == (*calcSlice)[i].Task_id && calc.RPN_string == (*calcSlice)[i].RPN_string {
+			*calcSlice = append((*calcSlice)[:i], (*calcSlice)[i + 1:]...)
+		}
+	}
+}

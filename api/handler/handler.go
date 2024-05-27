@@ -21,9 +21,10 @@ import (
 
 var Tasks = make(map[int]service.Task)
 
-var Calculations = make(chan service.Calculation)
+var Calculations = []service.Calculation{}
+var BeingCalculated = []service.Calculation{}
 
-func AddCalculation(w http.ResponseWriter, r *http.Request) {
+func AddTask(w http.ResponseWriter, r *http.Request) {
 	NewTask := service.Task{}
 	if r.Method == http.MethodPost && r.Header["Content-Type"][0] == "application/json" {
 		body, err := io.ReadAll(r.Body)
@@ -68,7 +69,7 @@ func AddCalculation(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
 		fmt.Fprintf(w, "{}")
 
-		go calculate.RPNtoSeparateCalculations(newRPN, NewTask.Id, Calculations)
+		go calculate.RPNtoSeparateCalculations(newRPN, NewTask.Id, &Calculations, BeingCalculated)
 
 
 	} else {
@@ -79,18 +80,36 @@ func AddCalculation(w http.ResponseWriter, r *http.Request) {
 
 func HandleCalculations(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
-		select {
-		case calculation := <-Calculations: // If there are any calculations available
+		// select {
+		// case calculation := Calculations[0]: // If there are any calculations available
+		// 	task_json, err := json.Marshal(calculation)
+		// 	if err != nil {
+		// 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		// 		return
+		// 	}
+		// 	w.WriteHeader(http.StatusOK)
+		// 	w.Header().Add("Content-Type", "application/json")
+		// 	fmt.Fprint(w, string(task_json))
+		// 	return
+		// default:
+		// 	http.Error(w, "Not Found", http.StatusNotFound)
+		// 	return
+		// }
+		if len(Calculations) > 0 {
+			calculation := Calculations[0]
+
 			task_json, err := json.Marshal(calculation)
 			if err != nil {
 				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 				return
 			}
+			Calculations = Calculations[1:]
+			BeingCalculated = append(BeingCalculated, calculation)
 			w.WriteHeader(http.StatusOK)
 			w.Header().Add("Content-Type", "application/json")
 			fmt.Fprint(w, string(task_json))
 			return
-		default:
+		} else {
 			http.Error(w, "Not Found", http.StatusNotFound)
 			return
 		}
@@ -119,6 +138,7 @@ func HandleCalculations(w http.ResponseWriter, r *http.Request) {
 		
 		// Change linked task's expression accordingly
 		// And check if task successfully calculated.
+		service.DeleteCalculationFromSlice(FinishedCalculation, &BeingCalculated)
 		LinkedTask := Tasks[FinishedCalculation.Task_id]
 		if LinkedTask.Status == "Finished" {
 			return
@@ -142,7 +162,7 @@ func HandleCalculations(w http.ResponseWriter, r *http.Request) {
 			Tasks[FinishedCalculation.Task_id] = LinkedTask
 			log.Printf("FINISHED CALCULATING RESULT IS %d\n", LinkedTask.Result)
 		} else {
-			go calculate.RPNtoSeparateCalculations(LinkedExpressionRPN, LinkedTask.Id, Calculations)
+			go calculate.RPNtoSeparateCalculations(LinkedExpressionRPN, LinkedTask.Id, &Calculations, BeingCalculated)
 		}
 
 
