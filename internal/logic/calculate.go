@@ -70,6 +70,11 @@ func tokenize(expr string) ([]string, error) {
 }
 
 func ValidateInfixExpression(expr string) error {
+
+	if len(expr) == 0 {
+		return fmt.Errorf("got empty string")
+	}
+
 	tokens, err := tokenize(expr)
 	if err != nil {
 		return err
