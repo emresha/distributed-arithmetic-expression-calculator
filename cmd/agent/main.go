@@ -8,6 +8,7 @@ package main
 
 import (
 	"bytes"
+	"distributed-calculator/config"
 	calculate "distributed-calculator/internal/logic"
 	"distributed-calculator/internal/service"
 	"encoding/json"
@@ -15,8 +16,7 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"os"
-	"strconv"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -93,75 +93,24 @@ func Calculate() {
 	}
 }
 func main() {
-
-	// Getting environment variables.
-	COMPUTING_POWER_STR := os.Getenv("COMPUTING_POWER")
-	TIME_ADDITION_MS_STR := os.Getenv("TIME_ADDITION_MS")
-	TIME_SUBTRACTION_MS_STR := os.Getenv("TIME_SUBTRACTION_MS")
-	TIME_MULTIPLICATIONS_MS_STR := os.Getenv("TIME_MULTIPLICATIONS_MS")
-	TIME_DIVISIONS_MS_STR := os.Getenv("TIME_DIVISIONS_MS")
-
 	log.Println("The Agent is being launched...")
-
-	if COMPUTING_POWER_STR == "" {
-		// Setting a default value
-		log.Println("COMPUTING_POWER NOT SET. DEFAULT VALUE WAS SET.")
-		fmt.Printf("Computing power is: %d\n", COMPUTING_POWER)
+	// Getting environment variables.
+	cfg, err := config.LoadConfig(filepath.Join("..", "..", "config.cfg"))
+	if err != nil {
+		log.Printf("ERROR READING CONFIG FILE: %v. DEFAULT VALUES WERE SET.\n", err)
 	} else {
-		COMPUTING_POWER, err := strconv.Atoi(COMPUTING_POWER_STR)
-		if err != nil {
-			log.Println("ERROR FETCHING ENV VARIABLE COMPUTING POWER. ASSUMING 10.")
-		}
-		fmt.Printf("Computing power is: %d\n", COMPUTING_POWER)
+		COMPUTING_POWER = cfg.ComputingPower
+		TIME_ADDITION_MS = cfg.TimeAdditionMs
+		TIME_SUBTRACTION_MS = cfg.TimeSubtractionMs
+		TIME_MULTIPLICATIONS_MS = cfg.TimeMultiplicationsMs
+		TIME_DIVISIONS_MS = cfg.TimeDivisionsMs
 	}
 
-	if TIME_ADDITION_MS_STR == "" {
-		// Setting a default value
-		log.Println("TIME_ADDITION_MS NOT SET. DEFAULT VALUE WAS SET.")
-		fmt.Printf("Addition time is: %d ms.\n", TIME_ADDITION_MS)
-	} else {
-		TIME_ADDITION_MS, err := strconv.Atoi(TIME_ADDITION_MS_STR)
-		if err != nil {
-			log.Println("ERROR FETCHING ENV VARIABLE TIME_ADDITION_MS. ASSUMING 5000.")
-		}
-		fmt.Printf("Computing power is: %d\n", TIME_ADDITION_MS)
-	}
-
-	if TIME_SUBTRACTION_MS_STR == "" {
-		// Setting a default value
-		log.Println("TIME_SUBTRACTION_MS NOT SET. DEFAULT VALUE WAS SET.")
-		fmt.Printf("Subtraction time is: %d ms.\n", TIME_SUBTRACTION_MS)
-	} else {
-		TIME_SUBTRACTION_MS, err := strconv.Atoi(TIME_SUBTRACTION_MS_STR)
-		if err != nil {
-			log.Println("ERROR FETCHING ENV VARIABLE TIME_SUBTRACTION_MS. ASSUMING 5000.")
-		}
-		fmt.Printf("Computing power is: %d\n", TIME_SUBTRACTION_MS)
-	}
-
-	if TIME_MULTIPLICATIONS_MS_STR == "" {
-		// Setting a default value
-		log.Println("TIME_MULTIPLICATIONS_MS NOT SET. DEFAULT VALUE WAS SET.")
-		fmt.Printf("Multiplication time is: %d ms.\n", TIME_MULTIPLICATIONS_MS)
-	} else {
-		TIME_MULTIPLICATIONS_MS, err := strconv.Atoi(TIME_MULTIPLICATIONS_MS_STR)
-		if err != nil {
-			log.Println("ERROR FETCHING ENV VARIABLE TIME_MULTIPLICATIONS_MS. ASSUMING 15000.")
-		}
-		fmt.Printf("Computing power is: %d\n", TIME_MULTIPLICATIONS_MS)
-	}
-
-	if TIME_DIVISIONS_MS_STR == "" {
-		// Setting a default value
-		log.Println("TIME_DIVISIONS_MS NOT SET. DEFAULT VALUE WAS SET.")
-		fmt.Printf("Division time is: %d ms.\n", TIME_DIVISIONS_MS)
-	} else {
-		TIME_DIVISIONS_MS, err := strconv.Atoi(TIME_DIVISIONS_MS_STR)
-		if err != nil {
-			log.Println("ERROR FETCHING ENV VARIABLE TIME_DIVISIONS_MS. ASSUMING 15000.")
-		}
-		fmt.Printf("Computing power is: %d\n", TIME_DIVISIONS_MS)
-	}
+	fmt.Printf("Computing power is: %d\n", COMPUTING_POWER)
+	fmt.Printf("Addition time is: %d ms.\n", TIME_ADDITION_MS)
+	fmt.Printf("Subtraction time is: %d ms.\n", TIME_SUBTRACTION_MS)
+	fmt.Printf("Multiplication time is: %d ms.\n", TIME_MULTIPLICATIONS_MS)
+	fmt.Printf("Division time is: %d ms.\n", TIME_DIVISIONS_MS)
 
 	for i := 0; i < COMPUTING_POWER; i++ {
 		go Calculate()

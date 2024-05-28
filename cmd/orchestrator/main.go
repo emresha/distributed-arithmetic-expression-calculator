@@ -4,10 +4,20 @@ import (
 	"distributed-calculator/api/handler"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 )
 
 func main() {
+
 	mux := http.NewServeMux()
+	static := filepath.Join("..", "..")
+	baseDir, _ := os.Getwd()
+	fmt.Println(baseDir)
+	fmt.Println(static)
+	fs := http.FileServer(http.Dir(static))
+	mux.HandleFunc("/", handler.TaskPage)
+	mux.Handle("/static/", fs)
 	mux.HandleFunc("/api/v1/calculate", handler.AddTask)
 	mux.HandleFunc("/api/v1/expressions", handler.HandleAllExpressions)
 	mux.HandleFunc("/api/v1/expressions/{id}", handler.HandleAllExpressions)

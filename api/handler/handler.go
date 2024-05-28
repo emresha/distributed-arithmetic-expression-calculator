@@ -15,6 +15,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -25,6 +26,17 @@ var Tasks = make(map[int]service.Task)
 var Calculations = []service.Calculation{}
 // This slice has calculations that are currently being calculated by The Agent.
 var BeingCalculated = []service.Calculation{}
+
+
+func TaskPage(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		http.NotFound(w, r)
+		return
+	}
+
+	staticPath := filepath.Join("..", "..", "static", "index.html")
+	http.ServeFile(w, r, staticPath)
+}
 
 func AddTask(w http.ResponseWriter, r *http.Request) {
 	NewTask := service.Task{}
@@ -128,7 +140,7 @@ func HandleCalculations(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Just in case some strange magic happened??
-		if FinishedCalculation.Status != "Finished" {
+		if FinishedCalculation.Status != "Finished" && FinishedCalculation.Status != "Error" {
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
@@ -141,6 +153,14 @@ func HandleCalculations(w http.ResponseWriter, r *http.Request) {
 		service.DeleteCalculationFromSlice(FinishedCalculation, &BeingCalculated)
 		LinkedTask := Tasks[FinishedCalculation.Task_id]
 		if LinkedTask.Status == "Finished" {
+			return
+		}
+
+		if FinishedCalculation.Status == "Error" {
+			log.Println("INSIDE")
+			LinkedTask.Result = 0
+			LinkedTask.Status = "Calculation Error"
+			Tasks[FinishedCalculation.Task_id] = LinkedTask
 			return
 		}
 
