@@ -76,6 +76,9 @@ func tokenize(expr string) ([]string, error) {
 }
 
 func ValidateInfixExpression(expr string) error {
+	if strings.Contains(expr, ".") {
+		return fmt.Errorf("invalid character '.'")
+	}
 
 	if len(expr) == 0 {
 		return fmt.Errorf("got empty string")
