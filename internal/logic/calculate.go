@@ -18,6 +18,7 @@ import (
 )
 
 var mu sync.Mutex
+var resultMu sync.Mutex 
 
 func isCalculationInSlice(calc service.Calculation, calcSlice []service.Calculation) bool {
 
@@ -287,7 +288,9 @@ func RPNtoSeparateCalculations(expression string, taskId int, resultCh *[]servic
 					log.Printf("NEW CALC: %s\n", newCalc.RPN_string)
 
 					if !isCalculationInSlice(newCalc, beingCalculated) {
+						resultMu.Lock()
 						*resultCh = append(*resultCh, newCalc)
+						resultMu.Unlock()
 					}
 				} else {
 					log.Printf("Invalid second operand: %s\n", operand2)
