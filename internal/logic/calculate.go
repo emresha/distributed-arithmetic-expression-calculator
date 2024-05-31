@@ -266,40 +266,37 @@ func RPNtoSeparateCalculations(expression string, taskId int, resultCh *[]servic
 	mu.Lock()
 	defer mu.Unlock()
 	tokens := strings.Split(expression, " ")
-	stack := []string{}
 
-	for _, token := range tokens {
-		if len(token) == 0 {
-			continue
-		}
-		if isOperator(rune(token[0])) && len(token) == 1 {
-			// Check if there are exactly two operands in the stack
-			if len(stack) != 2 {
-				log.Println("Skipping operator due to incorrect number of operands:", token)
-				continue // not exactly two operands for this operator, skip
+	for i := 2; i < len(tokens); i++ {
+		
+		if isOperator(rune(tokens[i][0])) && len(tokens[i]) == 1 {
+			
+			operand1 := tokens[i-2]
+			operand2 := tokens[i-1]
+			
+			
+			if _, err1 := strconv.ParseFloat(operand1, 64); err1 == nil {
+				if _, err2 := strconv.ParseFloat(operand2, 64); err2 == nil {
+					// Create a new calculation task
+					newCalc := service.Calculation{
+						Task_id:    taskId,
+						RPN_string: operand1 + " " + operand2 + " " + tokens[i],
+						Status:     "In Process",
+						Result:     0,
+					}
+					log.Printf("NEW CALC: %s\n", newCalc.RPN_string)
+
+					if !isCalculationInSlice(newCalc, beingCalculated) {
+						*resultCh = append(*resultCh, newCalc)
+					}
+				} else {
+					log.Printf("Invalid second operand: %s\n", operand2)
+				}
+			} else {
+				log.Printf("Invalid first operand: %s\n", operand1)
 			}
-			operand2 := stack[len(stack)-1]
-			operand1 := stack[len(stack)-2]
-			stack = stack[:len(stack)-2]
-
-			// Create a new calculation task
-			newCalc := service.Calculation{
-				Task_id:    taskId,
-				RPN_string: operand1 + " " + operand2 + " " + token,
-				Status:     "In Process",
-				Result:     0,
-			}
-			log.Printf("NEW CALC: %s\n", newCalc.RPN_string)
-
-			if !isCalculationInSlice(newCalc, beingCalculated){
-				*resultCh = append(*resultCh, newCalc)
-			}
-
-		} else if _, err := strconv.ParseFloat(token, 64); err == nil {
-			// Push operands onto the stack
-			stack = append(stack, token)
 		} else {
-			log.Println("Error: Invalid token", token)
+			log.Printf("Token is not an operator or invalid operator length: %s\n", tokens[i])
 		}
 	}
 }
