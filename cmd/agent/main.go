@@ -17,6 +17,7 @@ import (
 	"log"
 	"net/http"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 )
@@ -34,15 +35,15 @@ func Calculate() {
 		select {
 		case calc := <-Calculations:
 			var sleepDuration time.Duration
-
+			RPNSlice := strings.Split(calc.RPN_string, " ")
 			switch {
-			case strings.Contains(calc.RPN_string, "+"):
+			case slices.Contains(RPNSlice, "+"):
 				sleepDuration = time.Duration(TIME_ADDITION_MS) * time.Millisecond
-			case strings.Contains(calc.RPN_string, "-"):
+			case slices.Contains(RPNSlice, "-"):
 				sleepDuration = time.Duration(TIME_SUBTRACTION_MS) * time.Millisecond
-			case strings.Contains(calc.RPN_string, "*"):
+			case slices.Contains(RPNSlice, "*"):
 				sleepDuration = time.Duration(TIME_MULTIPLICATIONS_MS) * time.Millisecond
-			case strings.Contains(calc.RPN_string, "/"):
+			case slices.Contains(RPNSlice, "/"):
 				sleepDuration = time.Duration(TIME_DIVISIONS_MS) * time.Millisecond
 			default:
 				log.Println("Unsupported operation encountered.")

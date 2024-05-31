@@ -44,32 +44,30 @@ func isOperator(char rune) bool {
 }
 
 // validates an infix expression for correct syntax
+
 func tokenize(expr string) ([]string, error) {
 	var tokens []string
-	var number []rune
+	var buffer strings.Builder
 
-	for i, char := range expr {
+	for _, ch := range expr {
 		switch {
-		case unicode.IsDigit(char) || char == '.':
-			number = append(number, char)
-		case isOperator(char) || char == '(' || char == ')':
-			if len(number) > 0 {
-				tokens = append(tokens, string(number))
-				number = []rune{}
+		case unicode.IsSpace(ch):
+			continue
+		case unicode.IsDigit(ch) || ch == '.':
+			buffer.WriteRune(ch)
+		case isOperator(ch) || ch == '(' || ch == ')':
+			if buffer.Len() > 0 {
+				tokens = append(tokens, buffer.String())
+				buffer.Reset()
 			}
-			tokens = append(tokens, string(char))
-		case unicode.IsSpace(char):
-			if len(number) > 0 {
-				tokens = append(tokens, string(number))
-				number = []rune{}
-			}
+			tokens = append(tokens, string(ch))
 		default:
-			return nil, fmt.Errorf("invalid character %c at position %d", char, i)
+			return nil, fmt.Errorf("invalid character '%c'", ch)
 		}
 	}
 
-	if len(number) > 0 {
-		tokens = append(tokens, string(number))
+	if buffer.Len() > 0 {
+		tokens = append(tokens, buffer.String())
 	}
 
 	return tokens, nil
@@ -95,7 +93,7 @@ func ValidateInfixExpression(expr string) error {
 	for i, token := range tokens {
 		switch {
 		case isOperator(rune(token[0])):
-			if i == 0 || isOperator(rune(lastToken[0])) || lastToken == "(" {
+			if i == 0 || (i > 0 && isOperator(rune(lastToken[0])) && token != "-") || lastToken == "(" {
 				return fmt.Errorf("operator %s at position %d is misplaced", token, i)
 			}
 		case token == "(":
@@ -113,6 +111,9 @@ func ValidateInfixExpression(expr string) error {
 			balance--
 		default:
 			// Token should be a number
+			if token == "-" && (i == 0 || lastToken == "(" || isOperator(rune(lastToken[0]))) {
+				continue // Allow negative sign in these positions
+			}
 			if _, err := strconv.ParseFloat(token, 64); err != nil {
 				return fmt.Errorf("invalid token %s at position %d", token, i)
 			}
@@ -156,16 +157,22 @@ func InfixToRPN(expression string) (string, error) {
 	var output []string
 	var operators []rune
 	var buffer strings.Builder
+	previousToken := ' '
 
 	for _, token := range expression {
 		switch {
 		case unicode.IsSpace(token):
 			continue // Ignore whitespace
-		case unicode.IsDigit(token):
-			buffer.WriteRune(token) // Accumulate digits
+		case unicode.IsDigit(token) || (token == '-' && (previousToken == ' ' || previousToken == '(' || isOperator(previousToken))):
+			// Handle negative numbers or digits
+			buffer.WriteRune(token)
 		case unicode.IsLetter(token):
 			buffer.WriteRune(token) // Accumulate variables
 		case token == '(':
+			if buffer.Len() > 0 {
+				output = append(output, buffer.String())
+				buffer.Reset()
+			}
 			operators = append(operators, token)
 		case token == ')':
 			if buffer.Len() > 0 {
@@ -193,6 +200,7 @@ func InfixToRPN(expression string) (string, error) {
 			}
 			operators = append(operators, token)
 		}
+		previousToken = token
 	}
 
 	if buffer.Len() > 0 {
@@ -287,7 +295,7 @@ func RPNtoSeparateCalculations(expression string, taskId int, resultCh *[]servic
 				*resultCh = append(*resultCh, newCalc)
 			}
 
-		} else if isNumeric(token) {
+		} else if _, err := strconv.ParseFloat(token, 64); err == nil {
 			// Push operands onto the stack
 			stack = append(stack, token)
 		} else {
