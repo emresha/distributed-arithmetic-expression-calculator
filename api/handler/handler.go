@@ -195,7 +195,7 @@ func HandleCalculations(w http.ResponseWriter, r *http.Request) {
 }
 
 func HandleAllExpressions(w http.ResponseWriter, r *http.Request) {
-	id := r.URL.Query().Get("id")
+	id := r.PathValue("id")
 
 	if id == "" {
 		if r.Method == http.MethodGet {
