@@ -1,7 +1,9 @@
 package handler
 
 import (
-	"distributed-calculator/internal/logic"
+	"database/sql"
+	_ "github.com/mattn/go-sqlite3"
+	calculate "distributed-calculator/internal/logic"
 	"distributed-calculator/internal/service"
 	"encoding/json"
 	"fmt"
@@ -15,12 +17,12 @@ import (
 )
 
 var (
-	tasksMutex          sync.Mutex
-	calculationsMutex   sync.Mutex
+	tasksMutex           sync.Mutex
+	calculationsMutex    sync.Mutex
 	beingCalculatedMutex sync.Mutex
-	Tasks               = make(map[int]service.Task)
-	Calculations        = []service.Calculation{}
-	BeingCalculated     = []service.Calculation{}
+	Tasks                = make(map[int]service.Task)
+	Calculations         = []service.Calculation{}
+	BeingCalculated      = []service.Calculation{}
 )
 
 func TaskPage(w http.ResponseWriter, r *http.Request) {
@@ -244,4 +246,110 @@ func HandleAllExpressions(w http.ResponseWriter, r *http.Request) {
 	} else {
 		http.Error(w, "Bad Request", http.StatusBadRequest)
 	}
+}
+
+func HandleRegistration(w http.ResponseWriter, r *http.Request) {
+	// If it's not a POST request, we don't want it.
+	if r.Method != http.MethodPost {
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+
+	// Opening a connection to the db and creating the tables if necessary.
+	db, err := sql.Open("sqlite3", "./data.db")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	// This is important!
+	// Foreign keys might not always be on by default.
+	// However, we heavily rely on them, so if they don't work, we're toast.
+	_, err = db.Exec("PRAGMA foreign_keys = ON")
+	if err != nil {
+		log.Fatal("Failed to enable foreign key constraints:", err)
+	}	
+
+	createUserTableSQL := `
+    CREATE TABLE IF NOT EXISTS users (
+        "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,       
+        "name" TEXT UNIQUE,
+        "password" TEXT
+    );`
+
+	_, err = db.Exec(createUserTableSQL)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	createExpressionTableSQL := `
+	CREATE TABLE IF NOT EXISTS expressions (
+		"id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+		"status" TEXT NOT NULL,
+		"original_expression" TEXT NOT NULL,
+		"expression" TEXT NOT NULL,
+		"result" INTEGER,
+		"owner" INTEGER,
+		FOREIGN KEY(owner) REFERENCES users(id)
+	);`
+
+	_, err = db.Exec(createExpressionTableSQL)
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	createTasksTableSQL := `
+	CREATE TABLE IF NOT EXISTS tasks (
+		"id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+		"RPN_string" TEXT,
+		"status" TEXT,
+		"Result" TEXT,
+		"task_id" INTEGER,
+		FOREIGN KEY(task_id) REFERENCES expressions(id)
+	);`
+
+	_, err = db.Exec(createTasksTableSQL)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	newUser := service.User{}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	if err = json.Unmarshal(body, &newUser); err != nil {
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+
+	// Check if user already exists
+
+	checkUserSQL := `SELECT name FROM users WHERE name = ?`
+	var foundName string
+
+	err = db.QueryRow(checkUserSQL, newUser.Name).Scan(&foundName)
+
+	// This means that a user with that name was found
+	if err == nil {
+		http.Error(w, "User already exists. 409 Conflict.", http.StatusConflict)
+		return
+	}
+
+	// If no errors encountered to this point, then we can try to add the user to the db
+	addUserSQL := `INSERT INTO users (name, password) VALUES (?, ?)`
+	_, err = db.Exec(addUserSQL, newUser.Name, newUser.Password)
+
+	if err != nil {
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+
+	log.Printf("User %s created successfully!", newUser.Name)
+	// ...and that's it! :)
 }

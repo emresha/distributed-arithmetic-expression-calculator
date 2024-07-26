@@ -15,11 +15,15 @@ type Calculation struct {
 	Result     int    `json:"result"`
 }
 
+type User struct {
+	Name     string `json:"name"`
+	Password string `json:"password"`
+}
 
 func DeleteCalculationFromSlice(calc Calculation, calcSlice *[]Calculation) {
 	for i := 0; i < len(*calcSlice); i++ {
 		if calc.Task_id == (*calcSlice)[i].Task_id && calc.RPN_string == (*calcSlice)[i].RPN_string {
-			*calcSlice = append((*calcSlice)[:i], (*calcSlice)[i + 1:]...)
+			*calcSlice = append((*calcSlice)[:i], (*calcSlice)[i+1:]...)
 		}
 	}
 }
