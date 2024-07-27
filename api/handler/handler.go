@@ -2,7 +2,6 @@ package handler
 
 import (
 	"database/sql"
-	_ "github.com/mattn/go-sqlite3"
 	calculate "distributed-calculator/internal/logic"
 	"distributed-calculator/internal/service"
 	"encoding/json"
@@ -14,6 +13,10 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 var (
@@ -268,7 +271,7 @@ func HandleRegistration(w http.ResponseWriter, r *http.Request) {
 	_, err = db.Exec("PRAGMA foreign_keys = ON")
 	if err != nil {
 		log.Fatal("Failed to enable foreign key constraints:", err)
-	}	
+	}
 
 	createUserTableSQL := `
     CREATE TABLE IF NOT EXISTS users (
@@ -352,4 +355,89 @@ func HandleRegistration(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("User %s created successfully!", newUser.Name)
 	// ...and that's it! :)
+}
+
+func HandleLogin(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	cookie, err := r.Cookie("token")
+	if err != nil {
+		log.Printf("Cookie error: %v", err)
+	} else {
+		_, err := service.CheckAuthentication(cookie);
+		if err == nil {
+			http.Error(w, "Already signed in.", http.StatusBadRequest)
+			return
+		}
+		fmt.Println(err)
+	}
+
+	// Opening a connection to the db and creating the tables if necessary.
+	db, err := sql.Open("sqlite3", "./data.db")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	// Enable foreign key constraints.
+	_, err = db.Exec("PRAGMA foreign_keys = ON")
+	if err != nil {
+		log.Fatal("Failed to enable foreign key constraints:", err)
+	}
+
+	user := service.User{}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	if err = json.Unmarshal(body, &user); err != nil {
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
+
+	var storedPassword string
+	err = db.QueryRow(`SELECT password FROM users WHERE name = ?`, user.Name).Scan(&storedPassword)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			http.Error(w, "Invalid credentials", http.StatusUnauthorized)
+		} else {
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	// Check if passwords are the same
+	if user.Password != storedPassword {
+		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
+		return
+	}
+
+	// Create JWT token
+	expirationTime := time.Now().Add(15 * time.Minute)
+	claims := jwt.MapClaims{
+		"name": user.Name,
+		"nbf":  time.Now().Unix(),
+		"exp":  expirationTime.Unix(),
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenString, err := token.SignedString(service.JWTSecretToken)
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	// Return the token to the client
+	http.SetCookie(w, &http.Cookie{
+		Name:     "token",
+		Value:    tokenString,
+		Expires:  expirationTime,
+		HttpOnly: true,
+	})
 }

@@ -23,7 +23,7 @@ func main() {
 	mux.HandleFunc("/api/v1/expressions/{id}", handler.HandleAllExpressions)
 	mux.HandleFunc("/internal/task", handler.HandleCalculations)
 	mux.HandleFunc("/api/v1/register", handler.HandleRegistration)
-	// mux.HandleFunc("/api/v1/login", handler.HandleLogin)
+	mux.HandleFunc("/api/v1/login", handler.HandleLogin)
 	fmt.Println("Running server...")
 	http.ListenAndServe("localhost:8080", mux)
 }
