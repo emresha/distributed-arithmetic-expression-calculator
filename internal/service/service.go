@@ -38,7 +38,11 @@ func DeleteCalculationFromSlice(calc Calculation, calcSlice *[]Calculation) {
 	}
 }
 
-func CheckAuthentication(token *http.Cookie) (string, error) {
+func CheckAuthentication(r *http.Request) (string, error) {
+	token, err := r.Cookie("token")
+	if err != nil {
+		return "", err
+	}
 	tokenStr := token.Value
 	claims := jwt.MapClaims{}
 	JWT, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (interface{}, error) {

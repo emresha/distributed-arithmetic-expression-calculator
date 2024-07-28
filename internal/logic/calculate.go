@@ -7,29 +7,18 @@ It is overly complicated.
 */
 
 import (
-	"distributed-calculator/internal/service"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log"
 	"strconv"
 	"strings"
-	"unicode"
 	"sync"
+	"unicode"
 )
 
 var mu sync.Mutex
-var resultMu sync.Mutex 
 
-func isCalculationInSlice(calc service.Calculation, calcSlice []service.Calculation) bool {
-
-	for i := 0; i < len(calcSlice); i++ {
-		if calcSlice[i].Task_id == calc.Task_id && calcSlice[i].RPN_string == calc.RPN_string {
-			return true
-		}
-	}
-
-	return false
-}
 
 func IsFloat(s string) bool {
     _, err := strconv.ParseFloat(s, 64)
@@ -44,7 +33,7 @@ func isOperator(char rune) bool {
     return false
 }
 
-// validates an infix expression for correct syntax
+// Validates an infix expression for correct syntax.
 
 func tokenize(expr string) ([]string, error) {
 	var tokens []string
@@ -111,9 +100,9 @@ func ValidateInfixExpression(expr string) error {
 			}
 			balance--
 		default:
-			// Token should be a number
+			// Token should be a number.
 			if token == "-" && (i == 0 || lastToken == "(" || isOperator(rune(lastToken[0]))) {
-				continue // Allow negative sign in these positions
+				continue // Allow negative sign in these positions.
 			}
 			if _, err := strconv.ParseFloat(token, 64); err != nil {
 				return fmt.Errorf("invalid token %s at position %d", token, i)
@@ -163,12 +152,12 @@ func InfixToRPN(expression string) (string, error) {
 	for _, token := range expression {
 		switch {
 		case unicode.IsSpace(token):
-			continue // Ignore whitespace
+			continue // Ignore whitespace.
 		case unicode.IsDigit(token) || (token == '-' && (previousToken == ' ' || previousToken == '(' || isOperator(previousToken))):
-			// Handle negative numbers or digits
+			// Handle negative numbers or digits.
 			buffer.WriteRune(token)
 		case unicode.IsLetter(token):
-			buffer.WriteRune(token) // Accumulate variables
+			buffer.WriteRune(token) // Accumulate variables.
 		case token == '(':
 			if buffer.Len() > 0 {
 				output = append(output, buffer.String())
@@ -187,7 +176,7 @@ func InfixToRPN(expression string) (string, error) {
 			if len(operators) == 0 {
 				return "", fmt.Errorf("mismatched parentheses")
 			}
-			operators = operators[:len(operators)-1] // Pop the '('
+			operators = operators[:len(operators)-1] // Pop the '('.
 		case isOperator(token):
 			if buffer.Len() > 0 {
 				output = append(output, buffer.String())
@@ -263,35 +252,47 @@ func EvalRPN(tokens []string) (int, error) {
 
 // this func evaluates the given RPN expression received from the expression channel
 // and sends the result to the result slice.
-func RPNtoSeparateCalculations(expression string, taskId int, resultCh *[]service.Calculation, beingCalculated []service.Calculation) {
+func RPNtoSeparateCalculations(expression string, taskId int, db *sql.DB) {
 	mu.Lock()
 	defer mu.Unlock()
 	tokens := strings.Split(expression, " ")
 
 	for i := 2; i < len(tokens); i++ {
-		
 		if isOperator(rune(tokens[i][0])) && len(tokens[i]) == 1 {
-			
 			operand1 := tokens[i-2]
 			operand2 := tokens[i-1]
-			
-			
+
+			// Check if both operands are valid numbers.
 			if _, err1 := strconv.ParseFloat(operand1, 64); err1 == nil {
 				if _, err2 := strconv.ParseFloat(operand2, 64); err2 == nil {
-					// Create a new calculation task
-					newCalc := service.Calculation{
-						Task_id:    taskId,
-						RPN_string: operand1 + " " + operand2 + " " + tokens[i],
-						Status:     "In Process",
-						Result:     0,
-					}
-					log.Printf("NEW CALC: %s\n", newCalc.RPN_string)
+					rpnString := operand1 + " " + operand2 + " " + tokens[i]
+					status := "Waiting"
+					result := 0
 
-					if !isCalculationInSlice(newCalc, beingCalculated) {
-						resultMu.Lock()
-						*resultCh = append(*resultCh, newCalc)
-						resultMu.Unlock()
+					// Check if the calculation already exists in the database.
+					var count int
+					err := db.QueryRow("SELECT COUNT(*) FROM tasks WHERE task_id = ? AND RPN_string = ?", taskId, rpnString).Scan(&count)
+					if err != nil {
+						log.Fatalf("Failed to check for existing calculation: %v\n", err)
 					}
+					if count > 0 {
+						log.Printf("Calculation already exists: %s\n", rpnString)
+						continue
+					}
+
+					// Insert the new calculation into the database.
+					stmt, err := db.Prepare("INSERT INTO tasks(task_id, RPN_string, status, result) VALUES(?, ?, ?, ?)")
+					if err != nil {
+						log.Fatalf("Failed to prepare statement: %v\n", err)
+					}
+					defer stmt.Close()
+
+					_, err = stmt.Exec(taskId, rpnString, status, result)
+					if err != nil {
+						log.Fatalf("Failed to execute statement: %v\n", err)
+					}
+
+					log.Printf("Inserted new calculation: %s\n", rpnString)
 				} else {
 					log.Printf("Invalid second operand: %s\n", operand2)
 				}

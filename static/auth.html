@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="static/auth.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Ubuntu+Sans+Mono:ital,wght@0,400..700;1,400..700&display=swap"
+        rel="stylesheet">
+    <title>Распределенный вычислитель.</title>
+</head>
+
+<body>
+    <h1>Это Распределенный вычислитель арифметических выражений.</h1>
+    <h2>Чтобы воспользоваться им, вам надо войти или зарегистрироваться.</h2>
+    <form id="login-form">
+        <div class="form-wrapper">
+            <label for="login-username">Имя пользователя:</label>
+            <input type="text" id="login-username" name="username" required>
+            <label for="login-password">Пароль:</label>
+            <input type="password" id="login-password" name="password" required>
+            <button type="submit">Войти</button>
+            <p id="login-error" class="error-message"></p>
+        </div>
+    </form>
+    <h2 style="margin-bottom: 0;">или</h2>
+    <form id="register-form" style="margin-top: 20px;">
+        <div class="form-wrapper">
+            <label for="register-username">Имя пользователя:</label>
+            <input type="text" id="register-username" name="username" required>
+            <label for="register-password">Пароль:</label>
+            <input type="password" id="register-password" name="password" required>
+            <button type="submit">Зарегистрироваться</button>
+            <p id="register-error" class="error-message"></p>
+        </div>
+    </form>
+    <script>
+        document.getElementById('login-form').addEventListener('submit', async function(event) {
+            event.preventDefault(); // Prevent default form submission
+
+            const name = document.getElementById('login-username').value;
+            const password = document.getElementById('login-password').value;
+            const errorElement = document.getElementById('login-error');
+
+            try {
+                const response = await fetch('/api/v1/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ name, password })
+                });
+
+                if (response.ok) {
+                    // Handle successful login
+                    errorElement.innerText = ''; // Clear previous error message
+                    console.log('Login successful');
+                    window.location.href = "/"
+                } else {
+                    // Handle login failure
+                    const errorData = await response.json();
+                    errorElement.innerText = errorData.message || 'Login unsuccessful';
+                }
+            } catch (error) {
+                console.error('Error during login:', error);
+                errorElement.innerText = 'Login unsuccessful';
+            }
+        });
+
+        document.getElementById('register-form').addEventListener('submit', async function(event) {
+            event.preventDefault(); // Prevent default form submission
+
+            const name = document.getElementById('register-username').value;
+            const password = document.getElementById('register-password').value;
+            const errorElement = document.getElementById('register-error');
+
+            try {
+                const response = await fetch('/api/v1/register', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ name, password })
+                });
+
+                if (response.ok) {
+                    // Handle successful registration
+                    errorElement.innerText = ''; // Clear previous error message
+                    console.log('Registration successful');
+                    window.location.href = "/auth"
+                } else {
+                    // Handle registration failure
+                    const errorData = await response.json();
+                    errorElement.innerText = errorData.message || 'Registration unsuccessful';
+                }
+            } catch (error) {
+                console.error('Error during registration:', error);
+                errorElement.innerText = 'Registration unsuccessful';
+            }
+        });
+    </script>
+</body>
+
+</html>

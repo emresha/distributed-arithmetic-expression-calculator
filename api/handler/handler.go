@@ -5,6 +5,7 @@ import (
 	calculate "distributed-calculator/internal/logic"
 	"distributed-calculator/internal/service"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -20,6 +21,7 @@ import (
 )
 
 var (
+	db                   *sql.DB
 	tasksMutex           sync.Mutex
 	calculationsMutex    sync.Mutex
 	beingCalculatedMutex sync.Mutex
@@ -38,8 +40,54 @@ func TaskPage(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, staticPath)
 }
 
+func AuthPage(w http.ResponseWriter, r *http.Request) {
+	staticPath := filepath.Join("..", "..", "static", "auth.html")
+	http.ServeFile(w, r, staticPath)
+}
+
+func UserHandler(w http.ResponseWriter, r *http.Request) {
+	name, err := service.CheckAuthentication(r)
+	if err != nil {
+		fmt.Println(err) // named cookie not present
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	response := map[string]string{"username": name}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+	}
+}
+
 func AddTask(w http.ResponseWriter, r *http.Request) {
-	NewTask := service.Task{}
+	name, err := service.CheckAuthentication(r)
+
+	if err != nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	NewTask := service.Task{
+		Owner: name,
+	}
+
+	// Opening a connection to the db and creating the tables if necessary.
+	db, err = sql.Open("sqlite3", "./data.db")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// This is important!
+	// Foreign keys might not always be on by default.
+	// However, we heavily rely on them, so if they don't work, we're toast.
+	_, err = db.Exec("PRAGMA foreign_keys = ON")
+	if err != nil {
+		log.Fatal("Failed to enable foreign key constraints:", err)
+	}
+
 	if r.Method == http.MethodPost && r.Header.Get("Content-Type") == "application/json" {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -64,17 +112,34 @@ func AddTask(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		tasksMutex.Lock()
-		if _, ok := Tasks[NewTask.Id]; ok {
-			tasksMutex.Unlock()
-			http.Error(w, "Bad Request", http.StatusBadRequest)
+		var checkTask int
+
+		err = db.QueryRow("SELECT id FROM expressions WHERE id = ?", NewTask.Id).Scan(checkTask)
+
+		if err == nil {
+			http.Error(w, "Conflict", http.StatusConflict)
 			return
 		}
 
 		NewTask.Status = "In Process"
 		NewTask.Original_Expression = NewTask.Expression
-		Tasks[NewTask.Id] = NewTask
-		tasksMutex.Unlock()
+
+		var ownerID int
+		err = db.QueryRow(`SELECT id FROM users WHERE name = ?`, name).Scan(&ownerID)
+
+		if err != nil {
+			fmt.Println(err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
+
+		_, err = db.Exec(`INSERT INTO expressions (id, status, original_expression, expression, result, owner) VALUES (?, ?, ?, ?, ?, ?)`, NewTask.Id, NewTask.Status, NewTask.Original_Expression, NewTask.Expression, NewTask.Result, ownerID)
+
+		if err != nil {
+			fmt.Println(err)
+			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			return
+		}
 
 		newRPN, err := calculate.InfixToRPN(NewTask.Expression)
 		log.Println(newRPN)
@@ -90,7 +155,7 @@ func AddTask(w http.ResponseWriter, r *http.Request) {
 		go func() {
 			calculationsMutex.Lock()
 			defer calculationsMutex.Unlock()
-			calculate.RPNtoSeparateCalculations(newRPN, NewTask.Id, &Calculations, BeingCalculated)
+			calculate.RPNtoSeparateCalculations(newRPN, NewTask.Id, db)
 		}()
 	} else {
 		http.Error(w, "Bad Request", http.StatusUnprocessableEntity)
@@ -98,116 +163,62 @@ func AddTask(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func HandleCalculations(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodGet {
-		calculationsMutex.Lock()
-		defer calculationsMutex.Unlock()
+func HandleAllExpressions(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
 
-		if len(Calculations) > 0 {
-			calculation := Calculations[0]
-			Calculations = Calculations[1:]
+	name, err := service.CheckAuthentication(r)
 
-			beingCalculatedMutex.Lock()
-			BeingCalculated = append(BeingCalculated, calculation)
-			beingCalculatedMutex.Unlock()
+	if err != nil {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
 
-			task_json, err := json.Marshal(calculation)
+	// Opening a connection to the db and creating the tables if necessary.
+	db, err = sql.Open("sqlite3", "./data.db")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// This is important!
+	// Foreign keys might not always be on by default.
+	// However, we heavily rely on them, so if they don't work, we're toast.
+	_, err = db.Exec("PRAGMA foreign_keys = ON")
+	if err != nil {
+		log.Fatal("Failed to enable foreign key constraints:", err)
+	}
+
+	var userId int
+	err = db.QueryRow(`SELECT id FROM users WHERE name = ?`, name).Scan(&userId)
+
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	if id == "" {
+		if r.Method == http.MethodGet {
+			rows, err := db.Query(`SELECT id, status, original_expression, expression, result, owner FROM expressions WHERE owner = ?`, userId)
 			if err != nil {
 				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 				return
 			}
-
-			w.WriteHeader(http.StatusOK)
-			w.Header().Add("Content-Type", "application/json")
-			fmt.Fprint(w, string(task_json))
-		} else {
-			http.Error(w, "Not Found", http.StatusNotFound)
-		}
-	} else if r.Method == http.MethodPost && r.Header.Get("Content-Type") == "application/json" {
-		FinishedCalculation := service.Calculation{}
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-
-		if err = json.Unmarshal(body, &FinishedCalculation); err != nil {
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-
-		if FinishedCalculation.Status != "Finished" && FinishedCalculation.Status != "Error" {
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-			return
-		}
-
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, "{}")
-
-		beingCalculatedMutex.Lock()
-		service.DeleteCalculationFromSlice(FinishedCalculation, &BeingCalculated)
-		beingCalculatedMutex.Unlock()
-
-		tasksMutex.Lock()
-		LinkedTask := Tasks[FinishedCalculation.Task_id]
-		tasksMutex.Unlock()
-
-		if LinkedTask.Status == "Finished" {
-			return
-		}
-
-		if FinishedCalculation.Status == "Error" {
-			log.Println("INSIDE")
-			LinkedTask.Result = 0
-			LinkedTask.Status = "Calculation Error"
-			tasksMutex.Lock()
-			Tasks[FinishedCalculation.Task_id] = LinkedTask
-			tasksMutex.Unlock()
-			return
-		}
-
-		log.Printf("Finished calculation: %s, Result: %d\n", FinishedCalculation.RPN_string, FinishedCalculation.Result)
-		log.Printf("Linked Task Expression infix: %s\n", LinkedTask.Expression)
-		LinkedExpressionRPN, _ := calculate.InfixToRPN(LinkedTask.Expression)
-		log.Printf("Linked Task Expression RPN: %s\n", LinkedExpressionRPN)
-		LinkedExpressionRPN = strings.ReplaceAll(LinkedExpressionRPN, FinishedCalculation.RPN_string, fmt.Sprintf("%d", FinishedCalculation.Result))
-		log.Printf("Linked Task Expression New RPN: %s\n", LinkedExpressionRPN)
-		LinkedExpressionInfix, _ := calculate.RPNtoInfix(LinkedExpressionRPN)
-		log.Printf("Linked Task Expression New Infix: %s\n", LinkedExpressionInfix)
-		LinkedTask.Expression = LinkedExpressionInfix
-		tasksMutex.Lock()
-		Tasks[FinishedCalculation.Task_id] = LinkedTask
-		tasksMutex.Unlock()
-
-		if calculate.IsFloat(LinkedTask.Expression) {
-			res, _ := strconv.Atoi(LinkedTask.Expression)
-			LinkedTask.Status = "Finished"
-			LinkedTask.Result = res
-			tasksMutex.Lock()
-			Tasks[FinishedCalculation.Task_id] = LinkedTask
-			tasksMutex.Unlock()
-			log.Printf("FINISHED CALCULATING RESULT IS %d\n", LinkedTask.Result)
-		} else {
-			go func() {
-				calculationsMutex.Lock()
-				defer calculationsMutex.Unlock()
-				calculate.RPNtoSeparateCalculations(LinkedExpressionRPN, LinkedTask.Id, &Calculations, BeingCalculated)
-			}()
-		}
-	} else {
-		http.Error(w, "Bad Request", http.StatusBadRequest)
-	}
-}
-
-func HandleAllExpressions(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-
-	if id == "" {
-		if r.Method == http.MethodGet {
 			tasksMutex.Lock()
 			all_expressions := make([]service.Task, 0, len(Tasks))
-			for _, value := range Tasks {
-				all_expressions = append(all_expressions, value)
+			for rows.Next() {
+				var exp_id, owner, result int
+				var status, original_expression, expression string
+				err := rows.Scan(&exp_id, &status, &original_expression, &expression, &result, &owner)
+				if err != nil {
+					log.Fatal(err)
+				}
+				all_expressions = append(all_expressions, service.Task{
+					Id:                  exp_id,
+					Status:              status,
+					Original_Expression: original_expression,
+					Expression:          expression,
+					Result:              result,
+					Owner:               name,
+				})
 			}
 			tasksMutex.Unlock()
 
@@ -229,20 +240,44 @@ func HandleAllExpressions(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		tasksMutex.Lock()
-		searchedTask, ok := Tasks[searchedTaskId]
-		tasksMutex.Unlock()
+		var exp_id, owner, result int
+		var status, original_expression, expression string
 
-		if !ok {
+		err = db.QueryRow(`SELECT id, status, original_expression, expression, result, owner FROM expressions WHERE id = ?`, searchedTaskId).Scan(&exp_id, &status, &original_expression, &expression, &result, &owner)
+
+		if err != nil {
 			http.Error(w, "Not Found", http.StatusNotFound)
 			return
 		}
 
-		searchedTaskJson, err := json.Marshal(searchedTask)
+		var userId int
+
+		err = db.QueryRow(`SELECT id FROM users WHERE name = ?`, name).Scan(&userId)
+
+		if err != nil {
+			http.Error(w, "Bad Request", http.StatusBadRequest)
+			return
+		}
+
+		if owner != userId {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+
+		searchedTaskJson, err := json.Marshal(service.Task{
+			Id:                  exp_id,
+			Status:              status,
+			Original_Expression: original_expression,
+			Expression:          expression,
+			Result:              result,
+			Owner:               name,
+		})
+
 		if err != nil {
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
+
 		w.Header().Add("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprint(w, string(searchedTaskJson))
@@ -271,51 +306,6 @@ func HandleRegistration(w http.ResponseWriter, r *http.Request) {
 	_, err = db.Exec("PRAGMA foreign_keys = ON")
 	if err != nil {
 		log.Fatal("Failed to enable foreign key constraints:", err)
-	}
-
-	createUserTableSQL := `
-    CREATE TABLE IF NOT EXISTS users (
-        "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,       
-        "name" TEXT UNIQUE,
-        "password" TEXT
-    );`
-
-	_, err = db.Exec(createUserTableSQL)
-
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	createExpressionTableSQL := `
-	CREATE TABLE IF NOT EXISTS expressions (
-		"id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-		"status" TEXT NOT NULL,
-		"original_expression" TEXT NOT NULL,
-		"expression" TEXT NOT NULL,
-		"result" INTEGER,
-		"owner" INTEGER,
-		FOREIGN KEY(owner) REFERENCES users(id)
-	);`
-
-	_, err = db.Exec(createExpressionTableSQL)
-
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	createTasksTableSQL := `
-	CREATE TABLE IF NOT EXISTS tasks (
-		"id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-		"RPN_string" TEXT,
-		"status" TEXT,
-		"Result" TEXT,
-		"task_id" INTEGER,
-		FOREIGN KEY(task_id) REFERENCES expressions(id)
-	);`
-
-	_, err = db.Exec(createTasksTableSQL)
-	if err != nil {
-		log.Fatal(err)
 	}
 
 	newUser := service.User{}
@@ -363,20 +353,14 @@ func HandleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cookie, err := r.Cookie("token")
-	if err != nil {
-		log.Printf("Cookie error: %v", err)
-	} else {
-		_, err := service.CheckAuthentication(cookie);
-		if err == nil {
-			http.Error(w, "Already signed in.", http.StatusBadRequest)
-			return
-		}
-		fmt.Println(err)
+	_, err := service.CheckAuthentication(r)
+	if err == nil {
+		http.Error(w, "Already signed in.", http.StatusBadRequest)
+		return
 	}
 
 	// Opening a connection to the db and creating the tables if necessary.
-	db, err := sql.Open("sqlite3", "./data.db")
+	db, err = sql.Open("sqlite3", "./data.db")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -412,13 +396,14 @@ func HandleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if passwords are the same
+	// Check if passwords are the same.
+	// I didn't hash them, sorry.
 	if user.Password != storedPassword {
 		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
 		return
 	}
 
-	// Create JWT token
+	// Create JWT token.
 	expirationTime := time.Now().Add(15 * time.Minute)
 	claims := jwt.MapClaims{
 		"name": user.Name,
@@ -433,11 +418,136 @@ func HandleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Return the token to the client
+	// Return the token to the client.
 	http.SetCookie(w, &http.Cookie{
 		Name:     "token",
 		Value:    tokenString,
 		Expires:  expirationTime,
 		HttpOnly: true,
+		SameSite: http.SameSiteDefaultMode,
 	})
+}
+
+func GiveTask() (service.Calculation, error) {
+	// Opening a connection to the db and creating the tables if necessary.
+	db, err := sql.Open("sqlite3", "./data.db")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// This is important!
+	// Foreign keys might not always be on by default.
+	// However, we heavily rely on them, so if they don't work, we're toast.
+	_, err = db.Exec("PRAGMA foreign_keys = ON")
+	if err != nil {
+		log.Fatal("Failed to enable foreign key constraints:", err)
+	}
+
+		// Retrieve a calculation from the database
+		calculationsMutex.Lock()
+		defer calculationsMutex.Unlock()
+
+		var calculation service.Calculation
+		err = db.QueryRow("SELECT task_id, RPN_string, status, result FROM tasks WHERE status = 'Waiting' LIMIT 1").Scan(
+			&calculation.Task_id,
+			&calculation.RPN_string,
+			&calculation.Status,
+			&calculation.Result,
+		)
+
+		if err != nil {
+			return service.Calculation{}, err
+		}
+
+		return calculation, nil
+}
+
+func TakeTask(finishedCalculation service.Calculation) error {
+		if finishedCalculation.Status != "Finished" && finishedCalculation.Status != "Error" {
+			return errors.New("bad request")
+		}
+
+		// Update the calculation status in the database
+		beingCalculatedMutex.Lock()
+		_, err := db.Exec("UPDATE tasks SET status = ?, result = ? WHERE task_id = ? AND RPN_string = ?",
+			finishedCalculation.Status, finishedCalculation.Result, finishedCalculation.Task_id, finishedCalculation.RPN_string)
+		beingCalculatedMutex.Unlock()
+		if err != nil {
+			log.Printf("Failed to update calculation status: %v\n", err)
+			return err
+		}
+
+		// Retrieve the linked task
+		var linkedTask service.Task
+		tasksMutex.Lock()
+		err = db.QueryRow("SELECT id, status, original_expression, expression, result, owner FROM expressions WHERE id = ?", finishedCalculation.Task_id).Scan(
+			&linkedTask.Id,
+			&linkedTask.Status,
+			&linkedTask.Original_Expression,
+			&linkedTask.Expression,
+			&linkedTask.Result,
+			&linkedTask.Owner,
+		)
+		tasksMutex.Unlock()
+		if err != nil {
+			log.Printf("Failed to retrieve linked task: %v\n", err)
+			return err
+		}
+
+		// Check if the task has already finished
+		if linkedTask.Status == "Finished" {
+			return err
+		}
+
+		if finishedCalculation.Status == "Error" {
+			linkedTask.Result = 0
+			linkedTask.Status = "Calculation Error"
+			tasksMutex.Lock()
+			_, err := db.Exec("UPDATE expressions SET status = ?, result = ? WHERE id = ?", linkedTask.Status, linkedTask.Result, linkedTask.Id)
+			tasksMutex.Unlock()
+			if err != nil {
+				log.Printf("Failed to update task status to error: %v\n", err)
+			}
+			return err
+		}
+
+		log.Printf("Finished calculation: %s, Result: %d\n", finishedCalculation.RPN_string, finishedCalculation.Result)
+		log.Printf("Linked Task Expression infix: %s\n", linkedTask.Expression)
+		linkedExpressionRPN, _ := calculate.InfixToRPN(linkedTask.Expression)
+		log.Printf("Linked Task Expression RPN: %s\n", linkedExpressionRPN)
+		linkedExpressionRPN = strings.ReplaceAll(linkedExpressionRPN, finishedCalculation.RPN_string, fmt.Sprintf("%d", finishedCalculation.Result))
+		log.Printf("Linked Task Expression New RPN: %s\n", linkedExpressionRPN)
+		linkedExpressionInfix, _ := calculate.RPNtoInfix(linkedExpressionRPN)
+		log.Printf("Linked Task Expression New Infix: %s\n", linkedExpressionInfix)
+		linkedTask.Expression = linkedExpressionInfix
+
+		tasksMutex.Lock()
+		_, err = db.Exec("UPDATE expressions SET expression = ? WHERE id = ?", linkedTask.Expression, linkedTask.Id)
+		tasksMutex.Unlock()
+		if err != nil {
+			log.Printf("Failed to update linked task expression: %v\n", err)
+			return err
+		}
+
+		if calculate.IsFloat(linkedTask.Expression) {
+			res, _ := strconv.ParseFloat(linkedTask.Expression, 64)
+			linkedTask.Status = "Finished"
+			linkedTask.Result = int(res)
+			tasksMutex.Lock()
+			_, err := db.Exec("UPDATE expressions SET status = ?, result = ? WHERE id = ?", linkedTask.Status, linkedTask.Result, linkedTask.Id)
+			tasksMutex.Unlock()
+			if err != nil {
+				log.Printf("Failed to mark task as finished: %v\n", err)
+				return err
+			}
+			log.Printf("FINISHED CALCULATING RESULT IS %d\n", linkedTask.Result)
+		} else {
+			go func() {
+				calculationsMutex.Lock()
+				defer calculationsMutex.Unlock()
+				calculate.RPNtoSeparateCalculations(linkedExpressionRPN, linkedTask.Id, db)
+			}()
+		}
+
+		return nil
 }

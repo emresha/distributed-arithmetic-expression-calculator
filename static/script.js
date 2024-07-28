@@ -1,3 +1,5 @@
+
+
 // Generate a unique ID for each expression
 function generateId() {
     return Math.floor(Math.random() * 1000000);
@@ -9,6 +11,13 @@ async function getTasks() {
 
     try {
         const response = await fetch('/api/v1/expressions');
+        
+        if (response.status === 401) {
+            // Redirect to login or registration page
+            window.location.href = '/auth';
+            return;
+        
+        }
         const tasks = await response.json();
 
         tasks.sort((a, b) => a.id - b.id);
@@ -65,6 +74,33 @@ async function getTasks() {
     }
 }
 
+// Function to fetch and display the username
+async function displayUsername() {
+    try {
+        const response = await fetch('/user', {
+            method: 'GET',
+            credentials: 'include' // This will include cookies in the request
+        });
+        if (response.ok) {
+            const data = await response.json();
+            const username = data.username;
+            
+            // Create a new div element to display the username
+            const usernameDiv = document.createElement('div');
+            usernameDiv.id = 'username-display';
+            usernameDiv.innerText = `Logged in as: ${username}`;
+
+            // Add the usernameDiv to the beginning of the body
+            document.body.insertBefore(usernameDiv, document.body.firstChild);
+        } else if (response.status === 401) {
+            ;
+        }
+    } catch (error) {
+        console.error('Error fetching username:', error);
+    }
+}
+
+
 // Handle form submission
 document.querySelector('form').addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -99,7 +135,6 @@ document.querySelector('form').addEventListener('submit', async (event) => {
         }
     } catch (error) {
         console.error('Error submitting expression:', error);
-        // Add error message in case of network or other errors
         const errorMessage = document.createElement('div');
         errorMessage.className = 'task error';
         errorMessage.innerText = 'Ошибка: Не удалось добавить выражение (сетевая ошибка).';
@@ -107,8 +142,10 @@ document.querySelector('form').addEventListener('submit', async (event) => {
     }
 });
 
-// Call getTasks every 5 seconds (or a more reasonable interval)
-setInterval(getTasks, 500);
+window.onload = () => {
+    getTasks();
+    // displayUsername();
+};
 
-// Initial call to display tasks on page load
-getTasks();
+setInterval(getTasks, 500);
+// setInterval(displayUsername, 10000)

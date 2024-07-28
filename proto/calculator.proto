@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package calculator;
+
+option go_package = "./distributed-calculator";
+
+service CalculatorService {
+  rpc getCalculation (getCalculationRequest) returns (getCalculationResponse);
+  rpc sendCalculation (sendCalculationRequest) returns (sendCalculationResponse);
+}
+
+message sendCalculationResponse {}
+
+message getCalculationRequest {}
+
+message sendCalculationRequest {
+    int64 Task_id = 1;
+    string RPN_string = 2;
+    string Status = 3;
+    int64 Result = 4;
+}
+
+message getCalculationResponse {
+    int64 Task_id = 1;
+    string RPN_string = 2;
+    string Status = 3;
+    int64 Result = 4;
+}

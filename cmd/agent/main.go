@@ -7,19 +7,22 @@ If there are none, the Agent patiently waits.
 package main
 
 import (
-	"bytes"
+	"context"
+	"database/sql"
+	_ "github.com/mattn/go-sqlite3"
 	"distributed-calculator/config"
 	calculate "distributed-calculator/internal/logic"
 	"distributed-calculator/internal/service"
-	"encoding/json"
+	pb "distributed-calculator/proto"
 	"fmt"
-	"io"
 	"log"
-	"net/http"
 	"path/filepath"
 	"slices"
 	"strings"
 	"time"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 // Default values for variables
@@ -29,6 +32,8 @@ var TIME_SUBTRACTION_MS int = 5000
 var TIME_MULTIPLICATIONS_MS int = 15000
 var TIME_DIVISIONS_MS int = 15000
 var Calculations = make(chan service.Calculation)
+var grpcClient pb.CalculatorServiceClient
+var db *sql.DB
 
 func Calculate() {
 	for {
@@ -64,32 +69,16 @@ func Calculate() {
 				log.Printf("Finished calculation %d. Took %d ms.\n", calc.Task_id, sleepDuration.Milliseconds())
 			}
 
-			calc_json, err := json.Marshal(calc)
-			if err != nil {
-				log.Println("Error marshalling json.")
-				continue
-			}
+			_, err = grpcClient.SendCalculation(context.TODO(), &pb.SendCalculationRequest{
+				TaskId:    int64(calc.Task_id),
+				RPNString: calc.RPN_string,
+				Status:    calc.Status,
+				Result:    int64(calc.Result),
+			})
 
-			req, err := http.NewRequest("POST", "http://localhost:8080/internal/task", bytes.NewBuffer(calc_json))
 			if err != nil {
-				log.Println("Error creating request.")
-				continue
+				log.Printf("gRPC send error: %v", err)
 			}
-
-			req.Header.Set("Content-Type", "application/json")
-			client := &http.Client{}
-			resp, err := client.Do(req)
-			if err != nil {
-				log.Println("Error sending request.")
-				continue
-			}
-
-			if resp.StatusCode != http.StatusOK {
-				log.Printf("POST Request unsuccessful. Status Code: %d\n", resp.StatusCode)
-			} else {
-				log.Println("Successfully sent the POST Request.")
-			}
-			resp.Body.Close()
 		}
 	}
 }
@@ -113,44 +102,60 @@ func main() {
 	fmt.Printf("Multiplication time is: %d ms.\n", TIME_MULTIPLICATIONS_MS)
 	fmt.Printf("Division time is: %d ms.\n", TIME_DIVISIONS_MS)
 
+	// Opening a connection to the db and creating the tables if necessary.
+	db, err := sql.Open("sqlite3", "../orchestrator/data.db")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// This is important!
+	// Foreign keys might not always be on by default.
+	// However, we heavily rely on them, so if they don't work, we're toast.
+	_, err = db.Exec("PRAGMA foreign_keys = ON")
+	if err != nil {
+		log.Fatal("Failed to enable foreign key constraints:", err)
+	}
+
+	conn, err := grpc.NewClient("localhost:50051", grpc.WithTransportCredentials(insecure.NewCredentials()))
+
+	if err != nil {
+		log.Fatalf("Couldn't connect to gRPC: %v", err)
+	}
+
+	log.Println("Successfully connected to gRPC on :50051...")
+	defer conn.Close()
+
+	grpcClient = pb.NewCalculatorServiceClient(conn)
+
 	for i := 0; i < COMPUTING_POWER; i++ {
 		go Calculate()
 	}
 
-	client := &http.Client{}
-
 	// Infinite loop that sends requests to the Orchestrator.
 	for {
 		time.Sleep(1 * time.Second)
-		req, err := http.NewRequest("GET", "http://localhost:8080/internal/task", nil)
-		if err != nil {
-			log.Printf("GET Request error: %v\n", err)
-			continue
-		}
 
-		resp, err := client.Do(req)
+		gRPC_Calculation, err := grpcClient.GetCalculation(context.TODO(), &pb.GetCalculationRequest{})
 		if err != nil {
-			log.Printf("GET Request error: %v\n", err)
-			continue
-		}
-
-		if resp.StatusCode != http.StatusOK {
-			log.Printf("GET Request unsuccessful, status code: %d\n", resp.StatusCode)
+			if err == sql.ErrNoRows {
+				log.Printf("gRPC client error: no tasks.")
+			} else {
+				log.Printf("gRPC client error: %v", err)
+			}
 		} else {
-			log.Println("GET Request successful.")
-			body, err := io.ReadAll(resp.Body)
+			newCalc := service.Calculation{
+				Task_id:    int(gRPC_Calculation.TaskId),
+				RPN_string: gRPC_Calculation.RPNString,
+				Status:     gRPC_Calculation.Status,
+				Result:     int(gRPC_Calculation.Result),
+			}
+			_, err = db.Exec("UPDATE tasks SET status = 'In Process' WHERE task_id = ? AND RPN_string = ?", newCalc.Task_id, newCalc.RPN_string)
 			if err != nil {
-				log.Println("Response Body read error.")
+				log.Printf("Calculation update error, skipping. %v", err)
 				continue
 			}
-
-			calc := service.Calculation{}
-			json.Unmarshal(body, &calc)
-			Calculations <- calc
-
-			resp.Body.Close()
+			Calculations <- newCalc
 		}
-
 
 	}
 }
