@@ -9,18 +9,18 @@ package main
 import (
 	"context"
 	"database/sql"
-	_ "github.com/mattn/go-sqlite3"
 	"distributed-calculator/config"
 	calculate "distributed-calculator/internal/logic"
 	"distributed-calculator/internal/service"
 	pb "distributed-calculator/proto"
+	_ "github.com/mattn/go-sqlite3"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"log"
 	"path/filepath"
 	"slices"
 	"strings"
 	"time"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials/insecure"
 )
 
 // Default values for variables
