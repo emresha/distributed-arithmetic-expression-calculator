@@ -3,7 +3,6 @@ package service
 import (
 	"errors"
 	"net/http"
-
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -61,5 +60,5 @@ func CheckAuthentication(r *http.Request) (string, error) {
 		return name, nil
 	}
 
-	return "", errors.New("could extract name from token")
+	return "", errors.New("couldn't extract name from token")
 }

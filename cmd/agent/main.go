@@ -14,13 +14,11 @@ import (
 	calculate "distributed-calculator/internal/logic"
 	"distributed-calculator/internal/service"
 	pb "distributed-calculator/proto"
-	"fmt"
 	"log"
 	"path/filepath"
 	"slices"
 	"strings"
 	"time"
-
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -33,7 +31,6 @@ var TIME_MULTIPLICATIONS_MS int = 15000
 var TIME_DIVISIONS_MS int = 15000
 var Calculations = make(chan service.Calculation)
 var grpcClient pb.CalculatorServiceClient
-var db *sql.DB
 
 func Calculate() {
 	for {
@@ -96,11 +93,11 @@ func main() {
 		TIME_DIVISIONS_MS = cfg.TimeDivisionsMs
 	}
 
-	fmt.Printf("Computing power is: %d\n", COMPUTING_POWER)
-	fmt.Printf("Addition time is: %d ms.\n", TIME_ADDITION_MS)
-	fmt.Printf("Subtraction time is: %d ms.\n", TIME_SUBTRACTION_MS)
-	fmt.Printf("Multiplication time is: %d ms.\n", TIME_MULTIPLICATIONS_MS)
-	fmt.Printf("Division time is: %d ms.\n", TIME_DIVISIONS_MS)
+	log.Printf("Computing power is: %d\n", COMPUTING_POWER)
+	log.Printf("Addition time is: %d ms.\n", TIME_ADDITION_MS)
+	log.Printf("Subtraction time is: %d ms.\n", TIME_SUBTRACTION_MS)
+	log.Printf("Multiplication time is: %d ms.\n", TIME_MULTIPLICATIONS_MS)
+	log.Printf("Division time is: %d ms.\n", TIME_DIVISIONS_MS)
 
 	// Opening a connection to the db and creating the tables if necessary.
 	db, err := sql.Open("sqlite3", "../orchestrator/data.db")

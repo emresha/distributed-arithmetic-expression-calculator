@@ -15,7 +15,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
 	"github.com/golang-jwt/jwt/v5"
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -48,7 +47,7 @@ func AuthPage(w http.ResponseWriter, r *http.Request) {
 func UserHandler(w http.ResponseWriter, r *http.Request) {
 	name, err := service.CheckAuthentication(r)
 	if err != nil {
-		fmt.Println(err) // named cookie not present
+		log.Println(err) // named cookie not present
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
@@ -96,7 +95,7 @@ func AddTask(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if err = json.Unmarshal(body, &NewTask); err != nil {
-			fmt.Println(err)
+			log.Println(err)
 			http.Error(w, "Internal server error", http.StatusInternalServerError)
 			return
 		}
@@ -128,7 +127,7 @@ func AddTask(w http.ResponseWriter, r *http.Request) {
 		err = db.QueryRow(`SELECT id FROM users WHERE name = ?`, name).Scan(&ownerID)
 
 		if err != nil {
-			fmt.Println(err)
+			log.Println(err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
@@ -136,7 +135,7 @@ func AddTask(w http.ResponseWriter, r *http.Request) {
 		_, err = db.Exec(`INSERT INTO expressions (id, status, original_expression, expression, result, owner) VALUES (?, ?, ?, ?, ?, ?)`, NewTask.Id, NewTask.Status, NewTask.Original_Expression, NewTask.Expression, NewTask.Result, ownerID)
 
 		if err != nil {
-			fmt.Println(err)
+			log.Println(err)
 			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 			return
 		}
@@ -209,7 +208,8 @@ func HandleAllExpressions(w http.ResponseWriter, r *http.Request) {
 				var status, original_expression, expression string
 				err := rows.Scan(&exp_id, &status, &original_expression, &expression, &result, &owner)
 				if err != nil {
-					log.Fatal(err)
+					// We really shouldn't terminate the whole server if there is a faulty expression...
+					log.Printf("A very bad error while retrieving all expressions: %v", err)
 				}
 				all_expressions = append(all_expressions, service.Task{
 					Id:                  exp_id,
@@ -308,6 +308,7 @@ func HandleRegistration(w http.ResponseWriter, r *http.Request) {
 		log.Fatal("Failed to enable foreign key constraints:", err)
 	}
 
+	// New user instance for unmarshalling.
 	newUser := service.User{}
 
 	body, err := io.ReadAll(r.Body)
@@ -321,8 +322,7 @@ func HandleRegistration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Check if user already exists
-
+	// Check if user already exists.
 	checkUserSQL := `SELECT name FROM users WHERE name = ?`
 	var foundName string
 
@@ -496,6 +496,7 @@ func TakeTask(finishedCalculation service.Calculation) error {
 
 		// Check if the task has already finished
 		if linkedTask.Status == "Finished" {
+			log.Printf("Task already finished error")
 			return err
 		}
 

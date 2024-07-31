@@ -9,9 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-
 	"google.golang.org/grpc"
-
 	"distributed-calculator/api/handler"
 	"distributed-calculator/internal/service"
 	pb "distributed-calculator/proto"
@@ -133,7 +131,7 @@ func main() {
 	}
 
 	go func() {
-		fmt.Println("HTTP server running on port 8080...")
+		log.Println("HTTP server running on port 8080...")
 		http.ListenAndServe(":8080", mux)
 	}()
 
@@ -144,7 +142,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to listen on port 50051: %v\n", err)
 	}
-	fmt.Println("gRPC server running on port 50051...")
+	log.Println("gRPC server running on port 50051...")
 	if err := grpcServer.Serve(lis); err != nil {
 		log.Fatalf("Failed to serve gRPC server: %v\n", err)
 	}
